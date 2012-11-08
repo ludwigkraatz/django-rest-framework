@@ -162,6 +162,7 @@ class TemplateHTMLRenderer(BaseRenderer):
     media_type = 'text/html'
     format = 'html'
     template_name = None
+    _context_class = RequestContext
     exception_template_names = [
         '%(status_code)s.html',
         'api_exception.html'
@@ -197,7 +198,7 @@ class TemplateHTMLRenderer(BaseRenderer):
     def resolve_context(self, data, request, response):
         if response.exception:
             data['status_code'] = response.status_code
-        return RequestContext(request, data)
+        return self._context_class(request, data)
 
     def get_template_names(self, response, view):
         if response.template_name:
@@ -258,6 +259,7 @@ class BrowsableAPIRenderer(BaseRenderer):
     media_type = 'text/html'
     format = 'api'
     template = 'rest_framework/api.html'
+    _context_class = RequestContext
 
     def get_default_renderer(self, view):
         """
@@ -434,7 +436,7 @@ class BrowsableAPIRenderer(BaseRenderer):
         breadcrumb_list = get_breadcrumbs(request.path)
 
         template = loader.get_template(self.template)
-        context = RequestContext(request, {
+        context = self._context_class(request, {
             'content': content,
             'view': view,
             'request': request,
