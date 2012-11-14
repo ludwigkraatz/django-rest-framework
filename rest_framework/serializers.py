@@ -321,6 +321,7 @@ class ModelSerializerOptions(SerializerOptions):
     def __init__(self, meta):
         super(ModelSerializerOptions, self).__init__(meta)
         self.model = getattr(meta, 'model', None)
+        self.read_only_fields = getattr(meta, 'read_only_fields', ())
 
 
 class ModelSerializer(Serializer):
@@ -369,6 +370,12 @@ class ModelSerializer(Serializer):
                 field.initialize(parent=self, field_name=model_field.name)
                 ret[model_field.name] = field
 
+        for field_name in self.opts.read_only_fields:
+            assert field_name in ret, \
+                "read_only_fields on '%s' included invalid item '%s'" % \
+                (self.__class__.__name__, field_name)
+            ret[field_name].read_only = True
+
         return ret
 
     def get_pk_field(self, model_field):
@@ -381,7 +388,10 @@ class ModelSerializer(Serializer):
         """
         Creates a default instance of a nested relational field.
         """
-        return ModelSerializer()
+        class NestedModelSerializer(ModelSerializer):
+            class Meta:
+                model = model_field.rel.to
+        return NestedModelSerializer()
 
     def get_related_field(self, model_field, to_many=False):
         """
@@ -447,6 +457,13 @@ class ModelSerializer(Serializer):
                 setattr(instance, key, val)
             return instance
 
+        # Reverse relations
+        for (obj, model) in self.opts.model._meta.get_all_related_m2m_objects_with_model():
+            field_name = obj.field.related_query_name()
+            if field_name in attrs:
+                self.m2m_data[field_name] = attrs.pop(field_name)
+
+        # Forward relations
         for field in self.opts.model._meta.many_to_many:
             if field.name in attrs:
                 self.m2m_data[field.name] = attrs.pop(field.name)

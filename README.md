@@ -33,6 +33,7 @@ There is also a sandbox API you can use for testing purposes, [available here][s
 
 * [Markdown] - Markdown support for the self describing API.
 * [PyYAML] - YAML content type support.
+* [django-filter] - Filtering support.
 
 # Installation
 
@@ -56,6 +57,13 @@ To run the tests.
     ./rest_framework/runtests/runtests.py
 
 # Changelog
+
+## 2.1.2
+
+**Date**: 9th Nov 2012
+
+* **Filtering support.**
+* Bugfix: Support creation of objects with reverse M2M relations.
 
 ## 2.1.1
 
@@ -138,4 +146,5 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 [urlobject]: https://github.com/zacharyvoase/urlobject
 [markdown]: http://pypi.python.org/pypi/Markdown/
 [pyyaml]: http://pypi.python.org/pypi/PyYAML
+[django-filter]: https://github.com/alex/django-filter
 

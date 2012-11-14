@@ -57,6 +57,9 @@ The following people have helped make REST framework great.
 * Osiloke Harold Emoekpere - [osiloke]
 * Michael Shepanski - [mjs7231]
 * Toni Michel - [tonimichel]
+* Ben Konrath - [benkonrath]
+* Marc Aymerich - [glic3rinu]
+* Ludwig Kraatz - [ludwigkraatz]
 
 Many thanks to everyone who's contributed to the project.
 
@@ -149,3 +152,6 @@ To contact the author directly:
 [osiloke]: https://github.com/osiloke
 [mjs7231]: https://github.com/mjs7231
 [tonimichel]: https://github.com/tonimichel
+[benkonrath]: https://github.com/benkonrath
+[glic3rinu]: https://github.com/glic3rinu
+[ludwigkraatz]: https://github.com/ludwigkraatz

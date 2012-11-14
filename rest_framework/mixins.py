@@ -19,9 +19,16 @@ class CreateModelMixin(object):
         if serializer.is_valid():
             self.pre_save(serializer.object)
             self.object = serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
+    def get_success_headers(self,data):
+        if 'url' in data:
+            return {'Location': data.get('url')}
+        else:
+            return {}
+    
     def pre_save(self, obj):
         pass
 
@@ -34,7 +41,7 @@ class ListModelMixin(object):
     empty_error = u"Empty list and '%(class_name)s.allow_empty' is False."
 
     def list(self, request, *args, **kwargs):
-        self.object_list = self.get_queryset()
+        self.object_list = self.get_filtered_queryset()
 
         # Default is to allow empty querysets.  This can be altered by setting
         # `.allow_empty = False`, to raise 404 errors on empty querysets.
