@@ -112,6 +112,7 @@ class TestBasicHyperlinkedView(TestCase):
         response = self.list_view(request).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertEquals(response.data, self.data)
+        self.assertNotIn('Link', response)
 
     def test_get_detail_view(self):
         """
@@ -121,6 +122,7 @@ class TestBasicHyperlinkedView(TestCase):
         response = self.detail_view(request, pk=1).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertEquals(response.data, self.data[0])
+        self.assertEquals(response['Link'], '<%(url)s>; rel="related"; title="url"' % self.data[0])
 
 
 class TestManyToManyHyperlinkedView(TestCase):
@@ -160,6 +162,7 @@ class TestManyToManyHyperlinkedView(TestCase):
         response = self.list_view(request).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertEquals(response.data, self.data)
+        self.assertNotIn('Link', response)
 
     def test_get_detail_view(self):
         """
@@ -169,6 +172,7 @@ class TestManyToManyHyperlinkedView(TestCase):
         response = self.detail_view(request, pk=1).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertEquals(response.data, self.data[0])
+        self.assertEquals(response['Link'], '<%(url)s>; rel="related"; title="url"' % self.data[0])
 
 
 class TestCreateWithForeignKeys(TestCase):
@@ -193,7 +197,7 @@ class TestCreateWithForeignKeys(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(self.post.blogpostcomment_set.count(), 1)
         self.assertEqual(self.post.blogpostcomment_set.all()[0].text, 'A test comment')
-
+        self.assertEquals(response['Link'], '<%(blog_post_url)s>; rel="related"; title="blog_post_url"' % data)
 
 class TestCreateWithForeignKeysAndCustomSlug(TestCase):
     urls = 'rest_framework.tests.hyperlinkedserializers'
@@ -217,6 +221,7 @@ class TestCreateWithForeignKeysAndCustomSlug(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(self.post.photo_set.count(), 1)
         self.assertEqual(self.post.photo_set.all()[0].description, 'A test photo')
+        self.assertEquals(response['Link'], '<%(album_url)s>; rel="related"; title="album_url"' % data)
 
 
 class TestOptionalRelationHyperlinkedView(TestCase):
