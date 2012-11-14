@@ -673,8 +673,8 @@ class HyperlinkedViewField(HyperlinkedIdentityField):
                 raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
     
             try:
-                url = reverse(self.view_name, request=request, format=format)
-                return  "%(url)s?%(query_kwarg)s=%(query_value)" % {
+                url = reverse(view_name, request=request, format=format)
+                return  "%(url)s?%(query_kwarg)s=%(query_value)s" % {
                         'url': url,
                         'query_kwarg': self.slug_query_kwarg,
                         'query_value': slug
