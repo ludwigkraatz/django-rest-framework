@@ -22,7 +22,11 @@ class Response(SimpleTemplateResponse):
         self.data = data
         self.template_name = template_name
         self.exception = exception
+<<<<<<< HEAD
         
+=======
+                
+>>>>>>> generic_redirect_view
         if headers:
             for name,value in headers.iteritems():
                 self[name] = value
