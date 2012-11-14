@@ -654,6 +654,40 @@ class HyperlinkedViewField(HyperlinkedIdentityField):
     Represents a related Resource Endpoint within this api.
     """
     default_read_only = True
+    slug_query_kwarg = None
+    
+    def __init__(self, *args, **kwargs):
+        super(HyperlinkedViewField, self).__init__(*args, **kwargs)
+
+        self.slug_field = kwargs.pop('slug_field', self.slug_field)
+        default_slug_kwarg = self.slug_url_kwarg or self.slug_field
+        self.pk_url_kwarg = kwargs.pop('pk_url_kwarg', self.pk_url_kwarg)
+        self.slug_query_kwarg = kwargs.pop('slug_query_kwarg', default_slug_kwarg)
+        
+    def field_to_native(self, obj, field_name):
+        if self.slug_query_kwarg:         # TODO Test
+            request = self.context.get('request', None)
+            format = self.format or self.context.get('format', None)
+            view_name = self.view_name or self.parent.opts.view_name
+    
+            slug = getattr(obj, self.slug_field, None)
+    
+            if not slug:
+                raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
+    
+            try:
+                url = reverse(self.view_name, request=request, format=format)
+                return  "%(url)s?%(query_kwarg)s=%(query_value)" % {
+                        'url': url,
+                        'query_kwarg': self.slug_query_kwarg,
+                        'query_value': slug
+                        }
+            except:
+                pass
+    
+            raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
+        else:
+            return super(HyperlinkedViewField,self).field_to_native(obj, field_name)
 
     def from_native(self, value):
         raise Exception # readonly
