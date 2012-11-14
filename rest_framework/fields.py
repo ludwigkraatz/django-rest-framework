@@ -649,6 +649,14 @@ class HyperlinkedIdentityField(Field):
 
         raise ValidationError('Could not resolve URL for field using view name "%s"', view_name)
 
+class HyperlinkedViewField(HyperlinkedIdentityField):
+    """
+    Represents a related Resource Endpoint within this api.
+    """
+    default_read_only = True
+
+    def from_native(self, value):
+        raise Exception # readonly
 
 ##### Typed Fields #####
 
