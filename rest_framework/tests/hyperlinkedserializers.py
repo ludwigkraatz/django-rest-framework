@@ -203,7 +203,7 @@ class TestCreateWithForeignKeys(TestCase):
         self.assertEqual(response['Location'], 'http://testserver/comments/1/')
         self.assertEqual(self.post.blogpostcomment_set.count(), 1)
         self.assertEqual(self.post.blogpostcomment_set.all()[0].text, 'A test comment')
-        self.assertEquals(response['Link'], '<%(blog_post_url)s>; rel="related"; title="blog_post_url"' % data)
+        self.assertEquals(response['Link'], ('<%(blog_post_url)s>; rel="related"; title="blog_post_url"' % data) + ', <http://testserver/comments/1/>; rel="related"; title="url"')
 
 class TestCreateWithForeignKeysAndCustomSlug(TestCase):
     urls = 'rest_framework.tests.hyperlinkedserializers'

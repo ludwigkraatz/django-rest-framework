@@ -82,6 +82,7 @@ class SerializerOptions(object):
         self.depth = getattr(meta, 'depth', 0)
         self.fields = getattr(meta, 'fields', ())
         self.exclude = getattr(meta, 'exclude', ())
+        self.view_namespace = getattr(meta, 'view_namespace', None)
 
 
 class BaseSerializer(Field):
@@ -322,7 +323,6 @@ class ModelSerializerOptions(SerializerOptions):
         super(ModelSerializerOptions, self).__init__(meta)
         self.model = getattr(meta, 'model', None)
         self.read_only_fields = getattr(meta, 'read_only_fields', ())
-        self.view_namespace = getattr(meta, 'view_namespace', None)
 
 
 class ModelSerializer(Serializer):
