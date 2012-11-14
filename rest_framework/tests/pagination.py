@@ -62,6 +62,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['count'], 26)
         self.assertEquals(response.data['results'], self.data[:10])
         self.assertNotEquals(response.data['next'], None)
+        self.assertIn('rel="next"', response['Link'])
         self.assertEquals(response.data['previous'], None)
 
         request = factory.get(response.data['next'])
@@ -70,7 +71,9 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['count'], 26)
         self.assertEquals(response.data['results'], self.data[10:20])
         self.assertNotEquals(response.data['next'], None)
+        self.assertIn('rel="next"', response['Link'])
         self.assertNotEquals(response.data['previous'], None)
+        self.assertIn('rel="previous"', response['Link'])
 
         request = factory.get(response.data['next'])
         response = self.view(request).render()
@@ -79,6 +82,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[20:])
         self.assertEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertIn('rel="previous"', response['Link'])
 
 
 class IntegrationTestPaginationAndFiltering(TestCase):
@@ -114,6 +118,7 @@ class IntegrationTestPaginationAndFiltering(TestCase):
         self.assertEquals(response.data['count'], 15)
         self.assertEquals(response.data['results'], self.data[:10])
         self.assertNotEquals(response.data['next'], None)
+        self.assertIn('rel="next"', response['Link'])
         self.assertEquals(response.data['previous'], None)
 
         request = factory.get(response.data['next'])
@@ -123,6 +128,7 @@ class IntegrationTestPaginationAndFiltering(TestCase):
         self.assertEquals(response.data['results'], self.data[10:15])
         self.assertEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertIn('rel="previous"', response['Link'])
 
         request = factory.get(response.data['previous'])
         response = self.view(request).render()
@@ -130,6 +136,7 @@ class IntegrationTestPaginationAndFiltering(TestCase):
         self.assertEquals(response.data['count'], 15)
         self.assertEquals(response.data['results'], self.data[:10])
         self.assertNotEquals(response.data['next'], None)
+        self.assertIn('rel="next"', response['Link'])
         self.assertEquals(response.data['previous'], None)
 
 

@@ -1,5 +1,6 @@
 from django.core.handlers.wsgi import STATUS_CODE_TEXT
 from django.template.response import SimpleTemplateResponse
+from rest_framework.settings import api_settings
 
 
 class Response(SimpleTemplateResponse):
@@ -7,6 +8,13 @@ class Response(SimpleTemplateResponse):
     An HttpResponse that allows it's data to be rendered into
     arbitrary media types.
     """
+    # see http://tools.ietf.org/html/rfc5988
+    reserved_link_relations = ['alternate', 'appendix', 'bookmark', 'chapter', 'contents', 'copyright', 'current',
+                             'describedby', 'edit', 'edit-media', 'enclosure', 'first', 'glossary', 'help', 'hub',
+                             'index', 'last', 'latest-version', 'license', 'next', 'next-archive', 'payment',
+                             'prev', 'predecessor-version', 'previous', 'prev-archive', 'related', 'replies',
+                             'section', 'self', 'service', 'start', 'stylesheet', 'subsection', 'successor-version',
+                             'up', 'version-history', 'via', 'working-copy', 'working-copy-of']
 
     def __init__(self, data=None, status=200,
                  template_name=None, headers=None,
@@ -23,6 +31,33 @@ class Response(SimpleTemplateResponse):
         self.headers = headers and headers[:] or []
         self.template_name = template_name
         self.exception = exception
+        
+        if isinstance(self.data,dict) and api_settings.RESPONSE_LINK_HEADER:
+            self.prepare_link_header()
+    
+    def prepare_link_header(self):
+        header_links = []
+        for key, value in self.data.iteritems():
+            if isinstance(value,basestring) and (value.startswith('http://') or value.startswith('https://')):
+                if key in self.reserved_link_relations:
+                    header_links.append({'iri': value, 'rel': key})
+                else:
+                    header_links.append({'iri': value, 'rel': 'related', 'title': key})
+                if api_settings.RESPONSE_LINK_HEADER == "exclusive":
+                    self.data.pop(key)
+                    
+        if header_links:
+            link_header = self.get('Link', self.unpack_link_header(header_links.pop(0)))
+            for link in header_links:
+                link_header += ', ' + self.unpack_link_header(link)
+                
+            self['Link'] = link_header
+    
+    def unpack_link_header(self, link_dict):
+        iri = link_dict.pop('iri')
+        # TODO escape/quote?
+        params = "; ".join('%(key)s="%(value)s"' % {'key': key, 'value': value} for key, value in link_dict.iteritems())
+        return '<%(iri)s>; %(params)s' % {'iri': iri, 'params': params}
 
     @property
     def rendered_content(self):

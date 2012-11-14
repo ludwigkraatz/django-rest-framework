@@ -239,4 +239,5 @@ class TestOptionalRelationHyperlinkedView(TestCase):
         request = factory.get('/optionalrelationmodel-detail/1')
         response = self.detail_view(request, pk=1).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
+        self.assertEquals(response['Link'], '<%(url)s>; rel="related"; title="url"' % self.data)
         self.assertEquals(response.data, self.data)
