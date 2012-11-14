@@ -677,12 +677,9 @@ class HyperlinkedViewField(HyperlinkedIdentityField):
     slug_query_kwarg = None
     
     def __init__(self, *args, **kwargs):
+        self.slug_query_kwarg = kwargs.pop('slug_query_kwarg', None)
+        
         super(HyperlinkedViewField, self).__init__(*args, **kwargs)
-
-        self.slug_field = kwargs.pop('slug_field', self.slug_field)
-        default_slug_kwarg = self.slug_url_kwarg or self.slug_field
-        self.pk_url_kwarg = kwargs.pop('pk_url_kwarg', self.pk_url_kwarg)
-        self.slug_query_kwarg = kwargs.pop('slug_query_kwarg', default_slug_kwarg)
         
     def field_to_native(self, obj, field_name):
         if self.slug_query_kwarg:         # TODO Test
