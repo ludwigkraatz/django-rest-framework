@@ -30,16 +30,10 @@ class Response(SimpleTemplateResponse):
         self.data = data
         self.template_name = template_name
         self.exception = exception
-<<<<<<< HEAD
-<<<<<<< HEAD
         
-=======
-                
->>>>>>> generic_redirect_view
         if headers:
             for name,value in headers.iteritems():
                 self[name] = value
-=======
         
         if isinstance(self.data,dict) and api_settings.RESPONSE_LINK_HEADER:
             self.prepare_link_header()
@@ -67,7 +61,6 @@ class Response(SimpleTemplateResponse):
         # TODO escape/quote?
         params = "; ".join('%(key)s="%(value)s"' % {'key': key, 'value': value} for key, value in link_dict.iteritems())
         return '<%(iri)s>; %(params)s' % {'iri': iri, 'params': params}
->>>>>>> link_header_support
 
     @property
     def rendered_content(self):
