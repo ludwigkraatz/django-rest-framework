@@ -44,7 +44,7 @@ class Response(SimpleTemplateResponse):
                 else:
                     header_links.append({'iri': value, 'rel': 'related', 'title': key})
                     
-        if api_settings.RESPONSE_LINK_HEADER == "exclusive":
+        if api_settings.RESPONSE_LINK_HEADER == "exclusive": #TODO: write Test
             for link_dict in header_links:
                 if 'title' in link_dict:
                     self.data.pop(link_dict['title'])
