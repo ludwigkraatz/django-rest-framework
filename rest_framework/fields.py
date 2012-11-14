@@ -685,7 +685,13 @@ class HyperlinkedViewField(HyperlinkedIdentityField):
         if self.slug_query_kwarg:         # TODO Test
             request = self.context.get('request', None)
             format = self.format or self.context.get('format', None)
+            view_namespace = self.view_namespace if self.view_namespace is not None else self.parent.opts.view_namespace
             view_name = self.view_name or self.parent.opts.view_name
+            if view_namespace:
+                view_name = "%(namespace)s:%(view)s" % {
+                    'view':view_name,
+                    'namespace':view_namespace
+                }
     
             slug = getattr(obj, self.slug_field, None)
     
