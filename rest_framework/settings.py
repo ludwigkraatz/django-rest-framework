@@ -68,7 +68,10 @@ DEFAULTS = {
 
     'FORMAT_SUFFIX_KWARG': 'format',
 
-    'RESPONSE_LINK_HEADER': 'additional'
+    'RESPONSE_LINK_HEADER': 'additional',
+    
+    'PAGINATION_IN_HEADER': False,
+    'PAGINATION_RANGE_HEADER_TOKEN': 'x-records'
 }
 
 
