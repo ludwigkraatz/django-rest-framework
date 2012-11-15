@@ -66,7 +66,10 @@ DEFAULTS = {
     'URL_ACCEPT_OVERRIDE': 'accept',
     'URL_FORMAT_OVERRIDE': 'format',
 
-    'FORMAT_SUFFIX_KWARG': 'format'
+    'FORMAT_SUFFIX_KWARG': 'format',
+    
+    'PAGINATION_IN_HEADER': False,
+    'PAGINATION_RANGE_HEADER_TOKEN': 'x-records'
 }
 
 
