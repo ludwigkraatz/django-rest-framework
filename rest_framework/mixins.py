@@ -82,9 +82,8 @@ class ListModelMixin(object):
                 except:
                     return Response(status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE)
                 
-                if self.request.method.lower() != "head":
-                    limited_object_list = self.object_list[records_start:records_end]
-                    serializer = self.get_serializer(limited_object_list)
+                limited_object_list = self.object_list[records_start:records_end]
+                serializer = self.get_serializer(limited_object_list)
                 partial_content = True
             else:
                 return Response(status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE)
@@ -103,10 +102,9 @@ class ListModelMixin(object):
                     # if page query parameter is set, dont send 206
                     if not self.request.GET.get('page',None):
                         partial_content = True
-                        
-                    if self.request.method.lower() != "head":
-                        limited_object_list = self.object_list[records_start:records_end]
-                        serializer = self.get_serializer(limited_object_list)
+                    
+                    limited_object_list = self.object_list[records_start:records_end]
+                    serializer = self.get_serializer(limited_object_list)
                     if page.has_other_pages():
                         headers['Link'] = headers.get('Link', '')
                         url = self.request and self.request.build_absolute_uri() or ''
@@ -123,11 +121,9 @@ class ListModelMixin(object):
                 else:
                     if not self.request.GET.get('page',None):
                         headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
-                    if self.request.method.lower() != "head":
-                        serializer = self.get_pagination_serializer(page)
+                    serializer = self.get_pagination_serializer(page)
             else:
-                if self.request.method.lower() != "head":
-                    serializer = self.get_serializer(self.object_list)
+                serializer = self.get_serializer(self.object_list)
                 
                 if self.settings.PAGINATION_IN_HEADER:
                     records_start = 0
@@ -147,10 +143,7 @@ class ListModelMixin(object):
                             }
             headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
         
-        if self.request.method.lower() != "head":
-            return Response(serializer.data, status=status_code, headers=headers)
-        else:
-            return Response(status=status_code, headers=headers)
+        return Response(serializer.data, status=status_code, headers=headers)
     
     def metadata(self, request):
         metadata = super(ListModelMixin,self).metadata(request)
