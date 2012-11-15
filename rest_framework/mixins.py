@@ -7,6 +7,7 @@ which allows mixin classes to be composed in interesting ways.
 from django.http import Http404
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.templatetags.rest_framework import replace_query_param
 
 
 class CreateModelMixin(object):
@@ -36,12 +37,12 @@ class ListModelMixin(object):
     def parse_range_header(self, result_range):
         start = end = None
         if result_range.startswith("-"):
-            end = int(result_range.split("-")[1])
+            end = int(result_range.split("-")[1]) + 1
         elif result_range.endswith("-"):
             start = int(result_range.split("-")[0])
         else:
             start, end = result_range.split("-")
-            start, end = int(start), int(end)
+            start, end = int(start), int(end) + 1
         return start, end
     
     def list(self, request, *args, **kwargs):
@@ -89,7 +90,7 @@ class ListModelMixin(object):
                 paginator, page, queryset, is_paginated = packed
                 if self.settings.PAGINATION_IN_HEADER:
                     records_start = (page.number - 1) * page_size
-                    records_end = page.number * page_size - 1
+                    records_end = page.number * page_size
                     
                     # if page query parameter is set, dont send 206
                     if not self.request.GET.get('page',None):
@@ -116,7 +117,7 @@ class ListModelMixin(object):
                 serializer = self.get_serializer(self.object_list)
                 if self.settings.PAGINATION_IN_HEADER:
                     records_start = 0
-                    records_end = records_count - 1
+                    records_end = records_count
                     partial_content = True
     
         if partial_content:
@@ -126,7 +127,7 @@ class ListModelMixin(object):
                                 'token': self.settings.PAGINATION_RANGE_HEADER_TOKEN,
                                 'records_count': records_count,
                                 'records_start': records_start or 0,
-                                'records_end': min(records_end if records_end is not None else records_count,records_count-1),
+                                'records_end': min((records_end - 1) if records_end is not None else records_count,records_count-1),
                             }
         
         return Response(serializer.data, status=status_code, headers=headers)
