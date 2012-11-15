@@ -119,13 +119,18 @@ class ListModelMixin(object):
                                 headers['Link'] += ', '
                             headers['Link'] += '<%(url)s>; rel="previous"' % {'url': prev_url}
                 else:
+                    if not self.request.GET.get('page',None):
+                        headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
                     serializer = self.get_pagination_serializer(page)
             else:
                 serializer = self.get_serializer(self.object_list)
+                
                 if self.settings.PAGINATION_IN_HEADER:
                     records_start = 0
                     records_end = records_count
                     partial_content = True
+                else:
+                    headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
     
         if partial_content:
             status_code = status.HTTP_206_PARTIAL_CONTENT
@@ -136,9 +141,17 @@ class ListModelMixin(object):
                                 'records_start': records_start or 0,
                                 'records_end': min((records_end - 1) if records_end is not None else records_count,records_count-1),
                             }
+            headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
         
         return Response(serializer.data, status=status_code, headers=headers)
-
+    
+    def metadata(self, request):
+        metadata = super(ListModelMixin,self).metadata(request)
+        if not 'Accept-Ranges' in metadata:
+            metadata['Accept-Ranges'] = []
+        if not self.settings.PAGINATION_RANGE_HEADER_TOKEN in metadata['Accept-Ranges']:
+            metadata['Accept-Ranges'].append(self.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        return metadata
 
 class RetrieveModelMixin(object):
     """
