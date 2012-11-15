@@ -64,6 +64,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[:10])
         self.assertNotEquals(response.data['next'], None)
         self.assertEquals(response.data['previous'], None)
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
 
         request = factory.get(response.data['next'])
         response = self.view(request).render()
@@ -72,6 +73,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[10:20])
         self.assertNotEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertNotIn('Accept-Ranges', response)
 
         request = factory.get(response.data['next'])
         response = self.view(request).render()
@@ -80,6 +82,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[20:])
         self.assertEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertNotIn('Accept-Ranges', response)
 
     def test_get_paginated_root_view_in_header(self):
         """
@@ -94,6 +97,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data, self.data[:10])
         self.assertIn('rel="next"', response['Link'])
         self.assertNotIn('rel="previous"', response['Link'])
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         
         next_url = re.search('<([a-z:/\-0-9\.=?]*)>; rel="next"',response['Link']).group(1)
 
@@ -104,6 +108,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data, self.data[10:20])
         self.assertIn('rel="next"', response['Link'])
         self.assertIn('rel="previous"', response['Link'])
+        self.assertNotIn('Accept-Ranges', response)
         
         next_url = re.search('<([a-z:/\-0-9\.=?]*)>; rel="next"',response['Link']).group(1)
 
@@ -114,6 +119,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data, self.data[20:])
         self.assertNotIn('rel="next"', response['Link'])
         self.assertIn('rel="previous"', response['Link'])
+        self.assertNotIn('Accept-Ranges', response)
         
         
         request = factory.get('/', HTTP_RANGE='%s=10-19' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
@@ -122,18 +128,21 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response['Content-Range'], '%s=10-19/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         self.assertEquals(response.data, self.data[10:20])
         self.assertNotIn('Link', response)
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         request = factory.get('/', HTTP_RANGE='%s=10-' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
         self.assertEquals(response['Content-Range'], '%s=10-25/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         self.assertEquals(response.data, self.data[10:])
         self.assertNotIn('Link', response)
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         request = factory.get('/', HTTP_RANGE='%s=-9' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
         self.assertEquals(response['Content-Range'], '%s=0-9/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         self.assertEquals(response.data, self.data[:10])
         self.assertNotIn('Link', response)
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         RootView.settings.PAGINATION_IN_HEADER = False
 
 class IntegrationTestPaginationAndFiltering(TestCase):

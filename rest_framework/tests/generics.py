@@ -111,6 +111,9 @@ class TestRootView(TestCase):
                 'application/json',
                 'text/html'
             ],
+            'Accept-Ranges': [
+                RootView.settings.PAGINATION_RANGE_HEADER_TOKEN,
+            ],
             'name': 'Root',
             'description': 'Example description for OPTIONS.'
         }
