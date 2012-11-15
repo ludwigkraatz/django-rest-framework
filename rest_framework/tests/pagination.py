@@ -1,4 +1,5 @@
 import datetime
+import re
 from decimal import Decimal
 from django.core.paginator import Paginator
 from django.test import TestCase
