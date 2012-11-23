@@ -115,14 +115,15 @@ class ListModelMixin(object):
                 packed = self.paginate_queryset(self.object_list, page_size)
                 paginator, page, queryset, is_paginated = packed
                 
-                headers['Link'] = headers.get('Link', '')
-                url = self.request and self.request.build_absolute_uri() or ''
-                first_url = replace_query_param(url, 'page', 1)
-                if len(headers['Link']):
-                    headers['Link'] += ', '
-                headers['Link'] += '<%(url)s>; rel="first"' % {'url': first_url}
-                last_url = replace_query_param(url, 'page', paginator.num_pages)
-                headers['Link'] += ', <%(url)s>; rel="last"' % {'url': last_url}
+                if self.settings.PAGINATION_IN_HEADER:
+                    headers['Link'] = headers.get('Link', '')
+                    url = self.request and self.request.build_absolute_uri() or ''
+                    first_url = replace_query_param(url, 'page', 1)
+                    if len(headers['Link']):
+                        headers['Link'] += ', '
+                    headers['Link'] += '<%(url)s>; rel="first"' % {'url': first_url}
+                    last_url = replace_query_param(url, 'page', paginator.num_pages)
+                    headers['Link'] += ', <%(url)s>; rel="last"' % {'url': last_url}
             
             if page_size and page_nr:
                 if self.settings.PAGINATION_IN_HEADER:

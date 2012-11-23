@@ -64,6 +64,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[:10])
         self.assertNotEquals(response.data['next'], None)
         self.assertEquals(response.data['previous'], None)
+        self.assertNotIn('Link', response)
         self.assertNotIn('Accept-Ranges', response)
 
         request = factory.get(response.data['next'])
@@ -73,6 +74,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[10:20])
         self.assertNotEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertNotIn('Link', response)
         self.assertNotIn('Accept-Ranges', response)
 
         request = factory.get(response.data['next'])
@@ -82,6 +84,7 @@ class IntegrationTestPagination(TestCase):
         self.assertEquals(response.data['results'], self.data[20:])
         self.assertEquals(response.data['next'], None)
         self.assertNotEquals(response.data['previous'], None)
+        self.assertNotIn('Link', response)
         self.assertNotIn('Accept-Ranges', response)
 
     def test_get_paginated_root_view_in_header(self):
