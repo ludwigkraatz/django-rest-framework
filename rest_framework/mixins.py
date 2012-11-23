@@ -8,7 +8,7 @@ from django.http import Http404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.templatetags.rest_framework import replace_query_param
-
+import itertools
 
 class CreateModelMixin(object):
     """
@@ -42,15 +42,22 @@ class ListModelMixin(object):
     empty_error = u"Empty list and '%(class_name)s.allow_empty' is False."
 
     def parse_range_header(self, result_range):
-        start = end = None
-        if result_range.startswith("-"):
-            end = int(result_range.split("-")[1]) + 1
-        elif result_range.endswith("-"):
-            start = int(result_range.split("-")[0])
-        else:
-            start, end = result_range.split("-")
-            start, end = int(start), int(end) + 1
-        return start, end
+        starts = []
+        ends = []
+        for result_range in result_range.split(","):
+            start = end = None
+            if result_range.startswith("-"):
+                start = int(result_range)# + 1
+            elif result_range.endswith("-"):
+                start = int(result_range.split("-")[0])
+            else:
+                start, end = result_range.split("-")
+                start, end = int(start), int(end) + 1
+                
+            starts.append(start)
+            ends.append(end)
+            
+        return starts, ends
     
     def list(self, request, *args, **kwargs):
         self.object_list = self.get_filtered_queryset()
@@ -78,11 +85,28 @@ class ListModelMixin(object):
             token, result_range = self.request.META['HTTP_RANGE'].split("=")
             if token == self.settings.PAGINATION_RANGE_HEADER_TOKEN:                
                 try:
+                    ranges = []
                     records_start, records_end = self.parse_range_header(result_range)
+                    
+                    for range_start, range_end in zip(records_start, records_end):
+                        if range_start is not None and range_start < 0:
+                            # Querystes don't support negative indexing (yet?)
+                            range_start = records_count + range_start
+                            
+                        ranges.append((range_start,range_end))
+                        
+                    if len(ranges) > 1:
+                        raise Exception # currently not available
                 except:
                     return Response(status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE)
                 
-                limited_object_list = self.object_list[records_start:records_end]
+                # ranges can be comma seperated, so multiple lists are possibly requested
+                limited_object_list = itertools.chain(*[
+                    self.object_list[record_start:record_end]
+                    for record_start,record_end
+                    in ranges
+                ])
+                
                 serializer = self.get_serializer(limited_object_list)
                 partial_content = True
             else:
@@ -92,58 +116,63 @@ class ListModelMixin(object):
             # Pagination size is set by the `.paginate_by` attribute,
             # which may be `None` to disable pagination.
             page_size = self.get_paginate_by(self.object_list)
+            page_nr = int(self.request.GET.get('page',0))
+            
             if page_size:
                 packed = self.paginate_queryset(self.object_list, page_size)
                 paginator, page, queryset, is_paginated = packed
+                
+                headers['Link'] = headers.get('Link', '')
+                url = self.request and self.request.build_absolute_uri() or ''
+                first_url = replace_query_param(url, 'page', 1)
+                if len(headers['Link']):
+                    headers['Link'] += ', '
+                headers['Link'] += '<%(url)s>; rel="first"' % {'url': first_url}
+                last_url = replace_query_param(url, 'page', paginator.num_pages)
+                headers['Link'] += ', <%(url)s>; rel="last"' % {'url': last_url}
+            
+            if page_size and page_nr:
                 if self.settings.PAGINATION_IN_HEADER:
-                    records_start = (page.number - 1) * page_size
-                    records_end = page.number * page_size
+                    ranges = (((page.number - 1) * page_size, page.number * page_size),)
                     
-                    # if page query parameter is set, dont send 206
-                    if not self.request.GET.get('page',None):
-                        partial_content = True
-                    
-                    limited_object_list = self.object_list[records_start:records_end]
+                    limited_object_list = itertools.chain(*[
+                        self.object_list[record_start:record_end]
+                        for record_start,record_end
+                        in ranges
+                    ])
                     serializer = self.get_serializer(limited_object_list)
                     if page.has_other_pages():
-                        headers['Link'] = headers.get('Link', '')
                         url = self.request and self.request.build_absolute_uri() or ''
                         if page.has_next():
                             next_url = replace_query_param(url, 'page', page.next_page_number())
-                            if len(headers['Link']):
-                                headers['Link'] += ', '
-                            headers['Link'] += '<%(url)s>; rel="next"' % {'url': next_url}
+                            headers['Link'] += ', <%(url)s>; rel="next"' % {'url': next_url}
                         if page.has_previous():
                             prev_url = replace_query_param(url, 'page', page.previous_page_number())
-                            if len(headers['Link']):
-                                headers['Link'] += ', '
-                            headers['Link'] += '<%(url)s>; rel="previous"' % {'url': prev_url}
-                else:
-                    if not self.request.GET.get('page',None):
-                        headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
+                            headers['Link'] += ', <%(url)s>; rel="previous"' % {'url': prev_url}
+                else:                    
                     serializer = self.get_pagination_serializer(page)
             else:
                 serializer = self.get_serializer(self.object_list)
                 
-                if self.settings.PAGINATION_IN_HEADER:
-                    records_start = 0
-                    records_end = records_count
-                    partial_content = True
-                else:
-                    headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
+                headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
     
         if partial_content:
             status_code = status.HTTP_206_PARTIAL_CONTENT
             
-            headers['Content-Range'] = '%(token)s=%(records_start)d-%(records_end)d/%(records_count)d' % {
+            # currently just 1 range processable
+            cur_range = ranges[0]
+            
+            headers['Content-Range'] = '%(token)s %(records_start)d-%(records_end)d/%(records_count)d' % {
                                 'token': self.settings.PAGINATION_RANGE_HEADER_TOKEN,
                                 'records_count': records_count,
-                                'records_start': records_start or 0,
-                                'records_end': min((records_end - 1) if records_end is not None else records_count,records_count-1),
+                                'records_start': cur_range[0] or 0,
+                                'records_end': min((cur_range[1] - 1) if cur_range[1] is not None else records_count,records_count-1),
                             }
             headers['Accept-Ranges'] = self.settings.PAGINATION_RANGE_HEADER_TOKEN
         
         return Response(serializer.data, status=status_code, headers=headers)
+    def get_paginate_by(self,object_list):
+        return int(self.request.GET.get('pagesize',super(ListModelMixin,self).get_paginate_by(object_list)) or 0)
     
     def metadata(self, request):
         metadata = super(ListModelMixin,self).metadata(request)

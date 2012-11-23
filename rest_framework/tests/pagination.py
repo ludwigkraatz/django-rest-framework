@@ -57,7 +57,7 @@ class IntegrationTestPagination(TestCase):
         """
         GET requests to paginated ListCreateAPIView should return paginated results.
         """
-        request = factory.get('/')
+        request = factory.get('/?page=1')
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertEquals(response.data['count'], 26)
@@ -65,7 +65,7 @@ class IntegrationTestPagination(TestCase):
         self.assertNotEquals(response.data['next'], None)
         self.assertIn('rel="next"', response['Link'])
         self.assertEquals(response.data['previous'], None)
-        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        self.assertNotIn('Accept-Ranges', response)
 
         request = factory.get(response.data['next'])
         response = self.view(request).render()
@@ -96,31 +96,56 @@ class IntegrationTestPagination(TestCase):
         RootView.settings.PAGINATION_IN_HEADER = True
         request = factory.get('/')
         response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
-        self.assertEquals(response['Content-Range'], '%s=0-9/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
-        self.assertEquals(response.data, self.data[:10])
-        self.assertIn('rel="next"', response['Link'])
-        self.assertNotIn('rel="previous"', response['Link'])
+        self.assertEquals(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('Content-Range', response)
+        self.assertEquals(response.data, self.data)
+        self.assertIn('Link', response)
         self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         
-        next_url = re.search('<([a-z:/\-0-9\.=?]*)>; rel="next"',response['Link']).group(1)
+        first_url = re.search('<([a-z:/\-0-9\.=?&]*)>; rel="first"',response['Link']).group(1)
+        
+        self.assertEquals(first_url, 'http://testserver/?page=1')
+        
+        request = factory.get('/')
+        request.META[u'HTTP_RANGE'] = '%(token)s=%(start)s-%(end)s' % {
+            'token': RootView.settings.PAGINATION_RANGE_HEADER_TOKEN,
+            'start': 0,
+            'end': 9
+            }
+        response = self.view(request).render()
+        self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
+        self.assertEquals(response['Content-Range'], '%s 0-9/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        self.assertEquals(response.data, self.data[:10])
+        self.assertNotIn('Link', response)
+        self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        
+        request = factory.get('/?page=1&pagesize=5')
+        response = self.view(request).render()
+        self.assertEquals(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('Content-Range',response)
+        self.assertEquals(response.data, self.data[:5])
+        self.assertIn('rel="next"', response['Link'])
+        self.assertNotIn('rel="previous"', response['Link'])
+        self.assertNotIn('Accept-Ranges',response)
+        
+        next_url = re.search('<([a-z:/\-0-9\.=?&]*)>; rel="next"',response['Link']).group(1)
 
         request = factory.get(next_url)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertNotIn('Content-Range',response)
-        self.assertEquals(response.data, self.data[10:20])
+        self.assertEquals(response.data, self.data[5:10])
         self.assertIn('rel="next"', response['Link'])
         self.assertIn('rel="previous"', response['Link'])
-        self.assertNotIn('Accept-Ranges', response)
+        self.assertNotIn('Accept-Ranges',response)
         
-        next_url = re.search('<([a-z:/\-0-9\.=?]*)>; rel="next"',response['Link']).group(1)
+        next_url = re.search('<([a-z:/\-0-9\.=?&]*)>; rel="last"',response['Link']).group(1)
 
         request = factory.get(next_url)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_200_OK)
         self.assertNotIn('Content-Range',response)
-        self.assertEquals(response.data, self.data[20:])
+        self.assertEquals(response.data, self.data[25:])
         self.assertNotIn('rel="next"', response['Link'])
         self.assertIn('rel="previous"', response['Link'])
         self.assertNotIn('Accept-Ranges', response)
@@ -129,22 +154,22 @@ class IntegrationTestPagination(TestCase):
         request = factory.get('/', HTTP_RANGE='%s=10-19' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
-        self.assertEquals(response['Content-Range'], '%s=10-19/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        self.assertEquals(response['Content-Range'], '%s 10-19/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         self.assertEquals(response.data, self.data[10:20])
         self.assertNotIn('Link', response)
         self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         request = factory.get('/', HTTP_RANGE='%s=10-' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
-        self.assertEquals(response['Content-Range'], '%s=10-25/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        self.assertEquals(response['Content-Range'], '%s 10-25/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         self.assertEquals(response.data, self.data[10:])
         self.assertNotIn('Link', response)
         self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         request = factory.get('/', HTTP_RANGE='%s=-9' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         response = self.view(request).render()
         self.assertEquals(response.status_code, status.HTTP_206_PARTIAL_CONTENT)
-        self.assertEquals(response['Content-Range'], '%s=0-9/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
-        self.assertEquals(response.data, self.data[:10])
+        self.assertEquals(response['Content-Range'], '%s 17-25/26' % RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
+        self.assertEquals(response.data, self.data[-9:])
         self.assertNotIn('Link', response)
         self.assertEquals(response['Accept-Ranges'], RootView.settings.PAGINATION_RANGE_HEADER_TOKEN)
         RootView.settings.PAGINATION_IN_HEADER = False
