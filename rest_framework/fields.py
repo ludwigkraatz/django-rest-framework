@@ -687,7 +687,7 @@ class HyperlinkedIdentityField(Field):
         except:
             pass
 
-        raise ValidationError('Could not resolve URL for field using view name "%s"', view_name)
+        raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
 
 
 ##### Typed Fields #####
