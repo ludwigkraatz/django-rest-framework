@@ -93,7 +93,7 @@ class GenericAPIView(views.APIView):
         Return a serializer instance to use with paginated data.
         """
         class SerializerClass(self.pagination_serializer_class):
-            class Meta:
+            class Meta(self.pagination_serializer_class.Meta):
                 object_serializer_class = self.get_serializer_class()
 
         pagination_serializer_class = SerializerClass
@@ -225,7 +225,7 @@ class GenericAPIView(views.APIView):
             % self.__class__.__name__
 
         class DefaultSerializer(self.model_serializer_class):
-            class Meta:
+            class Meta(self.model_serializer_class.Meta):
                 model = self.model
         return DefaultSerializer
 

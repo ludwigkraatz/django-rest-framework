@@ -18,6 +18,12 @@ from rest_framework.compat import urlparse
 from rest_framework.compat import smart_text
 import warnings
 
+class Empty(object):
+    """
+    Placeholder for unset attributes.
+    Cannot use `None`, as that may be a valid value.
+    """
+    pass
 
 ##### Relational fields #####
 
@@ -332,6 +338,8 @@ class HyperlinkedRelatedField(RelatedField):
             self.view_name = kwargs.pop('view_name')
         except KeyError:
             raise ValueError("Hyperlinked field requires 'view_name' kwarg")
+        
+        self.view_namespace = kwargs.pop('view_namespace', Empty)
 
         self.lookup_field = kwargs.pop('lookup_field', self.lookup_field)
         self.format = kwargs.pop('format', None)
@@ -354,6 +362,14 @@ class HyperlinkedRelatedField(RelatedField):
 
         super(HyperlinkedRelatedField, self).__init__(*args, **kwargs)
 
+    def initialize(self, parent, field_name):
+        super(HyperlinkedRelatedField, self).initialize(parent, field_name)
+        
+        if self.view_namespace is Empty:
+            self.view_namespace = getattr(self.parent.opts, 'view_namespace', None)
+            
+        if self.view_namespace:
+            self.view_name = '%(namespace)s:%(name)s' % {'namespace': self.view_namespace, 'name': self.view_name} 
     def get_url(self, obj, view_name, request, format):
         """
         Given an object, return the URL that hyperlinks to the object.
@@ -499,10 +515,11 @@ class HyperlinkedIdentityField(Field):
     def __init__(self, *args, **kwargs):
         try:
             self.view_name = kwargs.pop('view_name')
-        except KeyError:
-            msg = "HyperlinkedIdentityField requires 'view_name' argument"
-            raise ValueError(msg)
-
+        except:
+            raise ValueError("Hyperlinked Identity field requires 'view_name' kwarg")
+        
+        self.view_namespace = kwargs.pop('view_namespace', Empty)
+        
         self.format = kwargs.pop('format', None)
         lookup_field = kwargs.pop('lookup_field', None)
         self.lookup_field = lookup_field or self.lookup_field
@@ -524,6 +541,16 @@ class HyperlinkedIdentityField(Field):
         self.slug_url_kwarg = kwargs.pop('slug_url_kwarg', default_slug_kwarg)
 
         super(HyperlinkedIdentityField, self).__init__(*args, **kwargs)
+
+    def initialize(self, parent, field_name):
+        super(HyperlinkedIdentityField, self).initialize(parent, field_name)
+        
+        if self.view_namespace is Empty:
+            self.view_namespace = getattr(self.parent.opts, 'view_namespace', None)
+            
+        if self.view_namespace:
+            self.view_name = '%(namespace)s:%(name)s' % {'namespace': self.view_namespace, 'name': self.view_name} 
+        
 
     def field_to_native(self, obj, field_name):
         request = self.context.get('request', None)

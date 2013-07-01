@@ -50,6 +50,7 @@ class CreateModelMixin(object):
         if serializer.is_valid():
             self.pre_save(serializer.object)
             self.object = serializer.save(force_insert=True)
+            self.post_save(self.object, created=True)
             headers = self.get_response_headers(request, status.HTTP_201_CREATED, serializer=serializer)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         
@@ -131,7 +132,8 @@ class UpdateModelMixin(object):
             self.pre_save(serializer.object)
             self.object = serializer.save(**save_kwargs)
             self.post_save(self.object, created=created)
-            return Response(serializer.data, status=success_status_code)
+            headers = self.get_response_headers(request, success_status_code, serializer=serializer)
+            return Response(serializer.data, status=success_status_code, headers=headers)
 
         headers = self.get_response_headers(request, status.HTTP_400_BAD_REQUEST, serializer=serializer)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST, headers=headers)
