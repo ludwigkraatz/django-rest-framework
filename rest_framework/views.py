@@ -24,6 +24,8 @@ class APIView(View):
     throttle_classes = api_settings.DEFAULT_THROTTLE_CLASSES
     permission_classes = api_settings.DEFAULT_PERMISSION_CLASSES
     content_negotiation_class = api_settings.DEFAULT_CONTENT_NEGOTIATION_CLASS
+    
+    headers = {}
 
     @classmethod
     def as_view(cls, **initkwargs):

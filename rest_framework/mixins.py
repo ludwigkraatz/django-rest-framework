@@ -125,7 +125,7 @@ class UpdateModelMixin(object):
             save_kwargs = {'force_update': True}
             success_status_code = status.HTTP_200_OK
 
-        serializer = self.get_serializer(self.object, data=request.DATA,
+        serializer = self.get_serializer(self.object, data=request.DATA.copy(), #TODO this copy sucks
                                          files=request.FILES, partial=partial)
 
         if serializer.is_valid():

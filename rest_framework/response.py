@@ -18,7 +18,7 @@ class Response(SimpleTemplateResponse):
 
     def __init__(self, data=None, status=200,
                  template_name=None, headers=None,
-                 exception=False, content_type=None):
+                 exception=False, content_type=None, **kwargs):
         """
         Alters the init arguments slightly.
         For example, drop 'template_name', and instead use 'data'.
@@ -26,7 +26,7 @@ class Response(SimpleTemplateResponse):
         Setting 'renderer' and 'media_type' will typically be deferred,
         For example being set automatically by the `APIView`.
         """
-        super(Response, self).__init__(None, status=status)
+        super(Response, self).__init__(None, status=status, **kwargs)
         self.data = data
         self.template_name = template_name
         self.exception = exception
