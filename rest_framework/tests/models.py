@@ -1,35 +1,8 @@
+from __future__ import unicode_literals
 from django.db import models
-from django.contrib.contenttypes.models import ContentType
-from django.contrib.contenttypes.generic import GenericForeignKey, GenericRelation
+from django.utils.translation import ugettext_lazy as _
+from rest_framework import serializers
 
-# from django.contrib.auth.models import Group
-
-
-# class CustomUser(models.Model):
-#     """
-#     A custom user model, which uses a 'through' table for the foreign key
-#     """
-#     username = models.CharField(max_length=255, unique=True)
-#     groups = models.ManyToManyField(
-#         to=Group, blank=True, null=True, through='UserGroupMap'
-#     )
-
-#     @models.permalink
-#     def get_absolute_url(self):
-#         return ('custom_user', (), {
-#             'pk': self.id
-#     })
-
-
-# class UserGroupMap(models.Model):
-#     user = models.ForeignKey(to=CustomUser)
-#     group = models.ForeignKey(to=Group)
-
-#     @models.permalink
-#     def get_absolute_url(self):
-#         return ('user_group_map', (), {
-#             'pk': self.id
-#         })
 
 def foobar():
     return 'foobar'
@@ -51,12 +24,17 @@ class RESTFrameworkModel(models.Model):
         abstract = True
 
 
+class HasPositiveIntegerAsChoice(RESTFrameworkModel):
+    some_choices = ((1, 'A'), (2, 'B'), (3, 'C'))
+    some_integer = models.PositiveIntegerField(choices=some_choices)
+
+
 class Anchor(RESTFrameworkModel):
     text = models.CharField(max_length=100, default='anchor')
 
 
 class BasicModel(RESTFrameworkModel):
-    text = models.CharField(max_length=100)
+    text = models.CharField(max_length=100, verbose_name=_("Text comes here"), help_text=_("Text description."))
 
 
 class SlugBasedModel(RESTFrameworkModel):
@@ -66,6 +44,7 @@ class SlugBasedModel(RESTFrameworkModel):
 
 class DefaultValueModel(RESTFrameworkModel):
     text = models.CharField(default='foobar', max_length=100)
+    extra = models.CharField(blank=True, null=True, max_length=100)
 
 
 class CallableDefaultValueModel(RESTFrameworkModel):
@@ -79,34 +58,6 @@ class ManyToManyModel(RESTFrameworkModel):
 class ReadOnlyManyToManyModel(RESTFrameworkModel):
     text = models.CharField(max_length=100, default='anchor')
     rel = models.ManyToManyField(Anchor)
-
-# Models to test generic relations
-
-
-class Tag(RESTFrameworkModel):
-    tag_name = models.SlugField()
-
-
-class TaggedItem(RESTFrameworkModel):
-    tag = models.ForeignKey(Tag, related_name='items')
-    content_type = models.ForeignKey(ContentType)
-    object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey('content_type', 'object_id')
-
-    def __unicode__(self):
-        return self.tag.tag_name
-
-
-class Bookmark(RESTFrameworkModel):
-    url = models.URLField()
-    tags = GenericRelation(TaggedItem)
-
-
-# Model to test filtering.
-class FilterableItem(RESTFrameworkModel):
-    text = models.CharField(max_length=100)
-    decimal = models.DecimalField(max_digits=4, decimal_places=2)
-    date = models.DateField()
 
 
 # Model for regression test for #285
@@ -124,8 +75,21 @@ class ActionItem(RESTFrameworkModel):
 
 
 # Models for reverse relations
+class Person(RESTFrameworkModel):
+    name = models.CharField(max_length=10)
+    age = models.IntegerField(null=True, blank=True)
+
+    @property
+    def info(self):
+        return {
+            'name': self.name,
+            'age': self.age,
+        }
+
+
 class BlogPost(RESTFrameworkModel):
     title = models.CharField(max_length=100)
+    writer = models.ForeignKey(Person, null=True, blank=True)
 
     def get_first_comment(self):
         return self.blogpostcomment_set.all()[0]
@@ -145,21 +109,9 @@ class Photo(RESTFrameworkModel):
     album = models.ForeignKey(Album)
 
 
-class Person(RESTFrameworkModel):
-    name = models.CharField(max_length=10)
-    age = models.IntegerField(null=True, blank=True)
-
-    @property
-    def info(self):
-        return {
-            'name': self.name,
-            'age': self.age,
-        }
-
-
 # Model for issue #324
 class BlankFieldModel(RESTFrameworkModel):
-    title = models.CharField(max_length=100, blank=True)
+    title = models.CharField(max_length=100, blank=True, null=False)
 
 
 # Model for issue #380
@@ -170,3 +122,48 @@ class OptionalRelationModel(RESTFrameworkModel):
 # Model for RegexField
 class Book(RESTFrameworkModel):
     isbn = models.CharField(max_length=13)
+
+
+# Models for relations tests
+# ManyToMany
+class ManyToManyTarget(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+
+
+class ManyToManySource(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+    targets = models.ManyToManyField(ManyToManyTarget, related_name='sources')
+
+
+# ForeignKey
+class ForeignKeyTarget(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+
+
+class ForeignKeySource(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+    target = models.ForeignKey(ForeignKeyTarget, related_name='sources')
+
+
+# Nullable ForeignKey
+class NullableForeignKeySource(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+    target = models.ForeignKey(ForeignKeyTarget, null=True, blank=True,
+                               related_name='nullable_sources')
+
+
+# OneToOne
+class OneToOneTarget(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+
+
+class NullableOneToOneSource(RESTFrameworkModel):
+    name = models.CharField(max_length=100)
+    target = models.OneToOneField(OneToOneTarget, null=True, blank=True,
+                                  related_name='nullable_source')
+
+
+# Serializer used to test BasicModel
+class BasicModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BasicModel

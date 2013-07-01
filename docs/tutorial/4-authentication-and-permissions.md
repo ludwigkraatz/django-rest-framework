@@ -17,19 +17,19 @@ Add the following two fields to the model.
     owner = models.ForeignKey('auth.User', related_name='snippets')
     highlighted = models.TextField()
 
-We'd also need to make sure that when the model is saved, that we populate the highlighted field, using the `pygments` code higlighting library.
+We'd also need to make sure that when the model is saved, that we populate the highlighted field, using the `pygments` code highlighting library.
 
 We'll need some extra imports:
 
     from pygments.lexers import get_lexer_by_name
-    from pygments.formatters import HtmlFormatter
+    from pygments.formatters.html import HtmlFormatter
     from pygments import highlight
 
 And now we can add a `.save()` method to our model class:
 
     def save(self, *args, **kwargs):
         """
-        Use the `pygments` library to create an highlighted HTML
+        Use the `pygments` library to create a highlighted HTML
         representation of the code snippet.
         """
         lexer = get_lexer_by_name(self.language)
@@ -54,30 +54,32 @@ You might also want to create a few different users, to use for testing the API.
 
 Now that we've got some users to work with, we'd better add representations of those users to our API.  Creating a new serializer is easy:
 
+    from django.contrib.auth.models import User
+
     class UserSerializer(serializers.ModelSerializer):
-        snippets = serializers.ManyPrimaryKeyRelatedField()
+        snippets = serializers.PrimaryKeyRelatedField(many=True)
 
         class Meta:
             model = User
             fields = ('id', 'username', 'snippets')
 
-Because `'snippets'` is a *reverse* relationship on the User model, it will not be included by default when using the `ModelSerializer` class, so we've needed to add an explicit field for it.
+Because `'snippets'` is a *reverse* relationship on the User model, it will not be included by default when using the `ModelSerializer` class, so we needed to add an explicit field for it.
 
 We'll also add a couple of views.  We'd like to just use read-only views for the user representations, so we'll use the `ListAPIView` and `RetrieveAPIView` generic class based views.
 
     class UserList(generics.ListAPIView):
-        model = User
+        queryset = User.objects.all()
         serializer_class = UserSerializer
     
     
-    class UserInstance(generics.RetrieveAPIView):
-        model = User
+    class UserDetail(generics.RetrieveAPIView):
+        queryset = User.objects.all()
         serializer_class = UserSerializer
 
 Finally we need to add those views into the API, by referencing them from the URL conf.
 
     url(r'^users/$', views.UserList.as_view()),
-    url(r'^users/(?P<pk>[0-9]+)/$', views.UserInstance.as_view())
+    url(r'^users/(?P<pk>[0-9]+)/$', views.UserDetail.as_view()),
 
 ## Associating Snippets with Users
 
@@ -92,9 +94,7 @@ On **both** the `SnippetList` and `SnippetDetail` view classes, add the followin
 
 ## Updating our serializer
 
-Now that snippets are associated with the user that created them, let's update our SnippetSerializer to reflect that.
-
-Add the following field to the serializer definition:
+Now that snippets are associated with the user that created them, let's update our `SnippetSerializer` to reflect that.  Add the following field to the serializer definition:
 
     owner = serializers.Field(source='owner.username')
 
@@ -104,11 +104,9 @@ This field is doing something quite interesting.  The `source` argument controls
 
 The field we've added is the untyped `Field` class, in contrast to the other typed fields, such as `CharField`, `BooleanField` etc...  The untyped `Field` is always read-only, and will be used for serialized representations, but will not be used for updating model instances when they are deserialized.
 
-**TODO: Explain the SessionAuthentication and BasicAuthentication classes, and demonstrate using HTTP basic authentication with curl requests**
-
 ## Adding required permissions to views
 
-Now that code snippets are associated with users we want to make sure that only authenticated users are able to create, update and delete code snippets.
+Now that code snippets are associated with users, we want to make sure that only authenticated users are able to create, update and delete code snippets.
 
 REST framework includes a number of permission classes that we can use to restrict who can access a given view.  In this case the one we're looking for is `IsAuthenticatedOrReadOnly`, which will ensure that authenticated requests get read-write access, and unauthenticated requests get read-only access.
 
@@ -120,34 +118,32 @@ Then, add the following property to **both** the `SnippetList` and `SnippetDetai
 
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
 
-**TODO: Now that the permissions are restricted, demonstrate using HTTP basic authentication with curl requests**
+## Adding login to the Browsable API
 
-## Adding login to the Browseable API
+If you open a browser and navigate to the browsable API at the moment, you'll find that you're no longer able to create new code snippets.  In order to do so we'd need to be able to login as a user.
 
-If you open a browser and navigate to the browseable API at the moment, you'll find that you're no longer able to create new code snippets. In order to do so we'd need to be able to login as a user.
-
-We can add a login view for use with the browseable API, by editing our URLconf once more.
+We can add a login view for use with the browsable API, by editing our URLconf once more.
 
 Add the following import at the top of the file:
 
     from django.conf.urls import include
 
-And, at the end of the file, add a pattern to include the login and logout views for the browseable API.
+And, at the end of the file, add a pattern to include the login and logout views for the browsable API.
 
     urlpatterns += patterns('',
         url(r'^api-auth/', include('rest_framework.urls',
-                                   namespace='rest_framework'))
+                                   namespace='rest_framework')),
     )
 
 The `r'^api-auth/'` part of pattern can actually be whatever URL you want to use.  The only restriction is that the included urls must use the `'rest_framework'` namespace.
 
-Now if you open up the browser again and refresh the page you'll see a 'Login' link in the top right of the page.  If you log in as one of the users you created earier, you'll be able to create code snippets again.
+Now if you open up the browser again and refresh the page you'll see a 'Login' link in the top right of the page.  If you log in as one of the users you created earlier, you'll be able to create code snippets again.
 
 Once you've created a few code snippets, navigate to the '/users/' endpoint, and notice that the representation includes a list of the snippet pks that are associated with each user, in each user's 'snippets' field.
 
 ## Object level permissions
 
-Really we'd like all code snippets to be visible to anyone, but also make sure that only the user that created a code snippet is able update or delete it.
+Really we'd like all code snippets to be visible to anyone, but also make sure that only the user that created a code snippet is able to update or delete it.
 
 To do that we're going to need to create a custom permission.
 
@@ -161,12 +157,9 @@ In the snippets app, create a new file, `permissions.py`
         Custom permission to only allow owners of an object to edit it.
         """
 
-        def has_permission(self, request, view, obj=None):
-            # Skip the check unless this is an object-level test
-            if obj is None:
-                return True
-    
-            # Read permissions are allowed to any request
+        def has_object_permission(self, request, view, obj):
+            # Read permissions are allowed to any request,
+            # so we'll always allow GET, HEAD or OPTIONS requests.
             if request.method in permissions.SAFE_METHODS:            
                 return True
     
@@ -184,10 +177,31 @@ Make sure to also import the `IsOwnerOrReadOnly` class.
 
 Now, if you open a browser again, you find that the 'DELETE' and 'PUT' actions only appear on a snippet instance endpoint if you're logged in as the same user that created the code snippet.
 
+## Authenticating with the API
+
+Because we now have a set of permissions on the API, we need to authenticate our requests to it if we want to edit any snippets.  We haven't set up any [authentication classes][authentication], so the defaults are currently applied, which are `SessionAuthentication` and `BasicAuthentication`.
+
+When we interact with the API through the web browser, we can login, and the browser session will then provide the required authentication for the requests.
+
+If we're interacting with the API programmatically we need to explicitly provide the authentication credentials on each request.
+
+If we try to create a snippet without authenticating, we'll get an error:
+
+    curl -i -X POST http://127.0.0.1:8000/snippets/ -d "code=print 123"
+
+    {"detail": "Authentication credentials were not provided."}
+
+We can make a successful request by including the username and password of one of the users we created earlier.
+
+    curl -X POST http://127.0.0.1:8000/snippets/ -d "code=print 789" -u tom:password
+    
+    {"id": 5, "owner": "tom", "title": "foo", "code": "print 789", "linenos": false, "language": "python", "style": "friendly"}
+
 ## Summary
 
 We've now got a fairly fine-grained set of permissions on our Web API, and end points for users of the system and for the code snippets that they have created.
 
-In [part 5][tut-5] of the tutorial we'll look at how we can tie everything together by creating an HTML endpoint for our hightlighted snippets, and improve the cohesion of our API by using hyperlinking for the relationships within the system.
+In [part 5][tut-5] of the tutorial we'll look at how we can tie everything together by creating an HTML endpoint for our highlighted snippets, and improve the cohesion of our API by using hyperlinking for the relationships within the system.
 
+[authentication]: ../api-guide/authentication.md
 [tut-5]: 5-relationships-and-hyperlinked-apis.md

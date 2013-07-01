@@ -1,25 +1,29 @@
-<iframe src="http://ghbtns.com/github-btn.html?user=tomchristie&amp;repo=django-rest-framework&amp;type=watch&amp;count=true" allowtransparency="true" frameborder="0" scrolling="0" width="110px" height="20px"></iframe>
-[![Travis build image][travis-build-image]][travis]
+<p class="badges">
+<iframe src="http://ghbtns.com/github-btn.html?user=tomchristie&amp;repo=django-rest-framework&amp;type=watch&amp;count=true" class="github-star-button" allowtransparency="true" frameborder="0" scrolling="0" width="110px" height="20px"></iframe>
+
+<a href="https://twitter.com/share" class="twitter-share-button" data-url="django-rest-framework.org" data-text="Checking out the totally awesome Django REST framework! http://django-rest-framework.org" data-count="none"></a>
+<script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="http://platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");</script>
+
+<img src="https://secure.travis-ci.org/tomchristie/django-rest-framework.png?branch=master" class="travis-build-image">
+</p>
 
 # Django REST framework
 
-**A toolkit for building well-connected, self-describing Web APIs.**
+**Awesome web-browsable Web APIs.**
 
----
+Django REST framework is a powerful and flexible toolkit that makes it easy to build Web APIs.
 
-**Note**: This documentation is for the 2.0 version of REST framework.  If you are looking for earlier versions please see the [0.4.x branch][0.4] on GitHub.
+Some reasons you might want to use REST framework:
 
----
+* The [Web browseable API][sandbox] is a huge usability win for your developers.
+* [Authentication policies][authentication] including [OAuth1a][oauth1-section] and [OAuth2][oauth2-section] out of the box.
+* [Serialization][serializers] that supports both [ORM][modelserializer-section] and [non-ORM][serializer-section] data sources.
+* Customizable all the way down - just use [regular function-based views][functionview-section] if you don't need the [more][generic-views] [powerful][viewsets] [features][routers].
+* [Extensive documentation][index], and [great community support][group].
 
-Django REST framework is a lightweight library that makes it easy to build Web APIs.  It is designed as a modular and easy to customize architecture, based on Django's class based views.
+There is a live example API for testing purposes, [available here][sandbox].
 
-Web APIs built using REST framework are fully self-describing and web browseable - a huge useability win for your developers.  It also supports a wide range of media types, authentication and permission policies out of the box.
-
-If you are considering using REST framework for your API, we recommend reading the [REST framework 2 announcment][rest-framework-2-announcement] which gives a good overview of the framework and it's capabilities.
-
-There is also a sandbox API you can use for testing purposes, [available here][sandbox].
-
-**Below**: *Screenshot from the browseable API*
+**Below**: *Screenshot from the browsable API*
 
 ![Screenshot][image]
 
@@ -27,50 +31,102 @@ There is also a sandbox API you can use for testing purposes, [available here][s
 
 REST framework requires the following:
 
-* Python (2.6, 2.7)
-* Django (1.3, 1.4, 1.5)
+* Python (2.6.5+, 2.7, 3.2, 3.3)
+* Django (1.3, 1.4, 1.5, 1.6)
 
 The following packages are optional:
 
-* [Markdown][markdown] (2.1.0+) - Markdown support for the browseable API.
+* [Markdown][markdown] (2.1.0+) - Markdown support for the browsable API.
 * [PyYAML][yaml] (3.10+) - YAML content-type support.
+* [defusedxml][defusedxml] (0.3+) - XML content-type support.
 * [django-filter][django-filter] (0.5.4+) - Filtering support.
+* [django-oauth-plus][django-oauth-plus] (2.0+) and [oauth2][oauth2] (1.5.211+) - OAuth 1.0a support.
+* [django-oauth2-provider][django-oauth2-provider] (0.2.3+) - OAuth 2.0 support.
+
+**Note**: The `oauth2` Python package is badly misnamed, and actually provides OAuth 1.0a support.  Also note that packages required for both OAuth 1.0a, and OAuth 2.0 are not yet Python 3 compatible.
 
 ## Installation
 
 Install using `pip`, including any optional packages you want...
 
     pip install djangorestframework
-    pip install markdown  # Markdown support for the browseable API.
-    pip install pyyaml    # YAML content-type support.
+    pip install markdown       # Markdown support for the browsable API.
     pip install django-filter  # Filtering support
 
 ...or clone the project from github.
 
     git clone git@github.com:tomchristie/django-rest-framework.git
-    cd django-rest-framework
-    pip install -r requirements.txt
-    pip install -r optionals.txt
 
-Add `rest_framework` to your `INSTALLED_APPS`.
+Add `'rest_framework'` to your `INSTALLED_APPS` setting.
 
     INSTALLED_APPS = (
         ...
         'rest_framework',        
     )
 
-If you're intending to use the browseable API you'll want to add REST framework's login and logout views.  Add the following to your root `urls.py` file.
+If you're intending to use the browsable API you'll probably also want to add REST framework's login and logout views.  Add the following to your root `urls.py` file.
 
     urlpatterns = patterns('',
         ...
         url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
     )
 
-Note that the URL path can be whatever you want, but you must include `rest_framework.urls` with the `rest_framework` namespace.
+Note that the URL path can be whatever you want, but you must include `'rest_framework.urls'` with the `'rest_framework'` namespace.
+
+## Example
+
+Let's take a look at a quick example of using REST framework to build a simple model-backed API.
+
+We'll create a read-write API for accessing users and groups.
+
+Any global settings for a REST framework API are kept in a single configuration dictionary named `REST_FRAMEWORK`.  Start off by adding the following to your `settings.py` module:
+
+    REST_FRAMEWORK = {
+        # Use hyperlinked styles by default.
+        # Only used if the `serializer_class` attribute is not set on a view.
+        'DEFAULT_MODEL_SERIALIZER_CLASS':
+            'rest_framework.serializers.HyperlinkedModelSerializer',
+
+        # Use Django's standard `django.contrib.auth` permissions,
+        # or allow read-only access for unauthenticated users.
+        'DEFAULT_PERMISSION_CLASSES': [
+            'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
+        ]
+    }
+
+Don't forget to make sure you've also added `rest_framework` to your `INSTALLED_APPS`.
+
+We're ready to create our API now.
+Here's our project's root `urls.py` module:
+
+    from django.conf.urls.defaults import url, patterns, include
+    from django.contrib.auth.models import User, Group
+    from rest_framework import viewsets, routers
+
+    # ViewSets define the view behavior.
+    class UserViewSet(viewsets.ModelViewSet):
+        model = User
+
+    class GroupViewSet(viewsets.ModelViewSet):
+        model = Group
+
+    
+    # Routers provide an easy way of automatically determining the URL conf
+    router = routers.DefaultRouter()
+    router.register(r'users', UserViewSet)
+    router.register(r'groups', GroupViewSet)
+
+
+    # Wire up our API using automatic URL routing.
+    # Additionally, we include login URLs for the browseable API.
+    urlpatterns = patterns('',
+        url(r'^', include(router.urls)),
+        url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
+    )
 
 ## Quickstart
 
-Can't wait to get started?  The [quickstart guide][quickstart] is the fastest way to get up and running with REST framework.
+Can't wait to get started?  The [quickstart guide][quickstart] is the fastest way to get up and running, and building APIs with REST framework.
 
 ## Tutorial
 
@@ -81,6 +137,7 @@ The tutorial will walk you through the building blocks that make up REST framewo
 * [3 - Class based views][tut-3]
 * [4 - Authentication & permissions][tut-4]
 * [5 - Relationships & hyperlinked APIs][tut-5]
+* [6 - Viewsets & routers][tut-6]
 
 ## API Guide
 
@@ -90,10 +147,13 @@ The API guide is your complete reference manual to all the functionality provide
 * [Responses][response]
 * [Views][views]
 * [Generic views][generic-views]
+* [Viewsets][viewsets]
+* [Routers][routers]
 * [Parsers][parsers]
 * [Renderers][renderers]
 * [Serializers][serializers]
 * [Serializer fields][fields]
+* [Serializer relations][relations]
 * [Authentication][authentication]
 * [Permissions][permissions]
 * [Throttling][throttling]
@@ -110,10 +170,13 @@ The API guide is your complete reference manual to all the functionality provide
 
 General guides to using REST framework.
 
+* [AJAX, CSRF & CORS][ajax-csrf-cors]
 * [Browser enhancements][browser-enhancements]
 * [The Browsable API][browsableapi]
 * [REST, Hypermedia & HATEOAS][rest-hypermedia-hateoas]
 * [2.0 Announcement][rest-framework-2-announcement]
+* [2.2 Announcement][2.2-announcement]
+* [2.3 Announcement][2.3-announcement]
 * [Release Notes][release-notes]
 * [Credits][credits]
 
@@ -129,15 +192,30 @@ Run the tests:
 
     ./rest_framework/runtests/runtests.py
 
+To run the tests against all supported configurations, first install [the tox testing tool][tox] globally, using `pip install tox`, then simply run `tox`: 
+
+    tox
+
 ## Support
 
-For support please see the [REST framework discussion group][group], or try the  `#restframework` channel on `irc.freenode.net`.
+For support please see the [REST framework discussion group][group], try the  `#restframework` channel on `irc.freenode.net`, or raise a  question on [Stack Overflow][stack-overflow], making sure to include the ['django-rest-framework'][django-rest-framework-tag] tag.
 
-Paid support is also available from [DabApps], and can include work on REST framework core, or support with building your REST framework API.  Please contact [Tom Christie][email] if you'd like to discuss commercial support options.
+[Paid support is available][paid-support] from [DabApps][dabapps], and can include work on REST framework core, or support with building your REST framework API.  Please [contact DabApps][contact-dabapps] if you'd like to discuss commercial support options.
+
+For updates on REST framework development, you may also want to follow [the author][twitter] on Twitter.
+
+<a style="padding-top: 10px" href="https://twitter.com/_tomchristie" class="twitter-follow-button" data-show-count="false">Follow @_tomchristie</a>
+<script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="//platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");</script>
+
+## Security
+
+If you believe you’ve found something in Django REST framework which has security implications, please **do not raise the issue in a public forum**.
+
+Send a description of the issue via email to [rest-framework-security@googlegroups.com][security-mail].  The project maintainers will then work with you to resolve any issues where required, prior to any public disclosure.
 
 ## License
 
-Copyright (c) 2011-2012, Tom Christie
+Copyright (c) 2011-2013, Tom Christie
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without 
@@ -161,13 +239,23 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 [travis]: http://travis-ci.org/tomchristie/django-rest-framework?branch=master
-[travis-build-image]: https://secure.travis-ci.org/tomchristie/django-rest-framework.png?branch=restframework2
+[travis-build-image]: https://secure.travis-ci.org/tomchristie/django-rest-framework.png?branch=master
 [urlobject]: https://github.com/zacharyvoase/urlobject
 [markdown]: http://pypi.python.org/pypi/Markdown/
 [yaml]: http://pypi.python.org/pypi/PyYAML
-[django-filter]: https://github.com/alex/django-filter
+[defusedxml]: https://pypi.python.org/pypi/defusedxml
+[django-filter]: http://pypi.python.org/pypi/django-filter
+[oauth2]: https://github.com/simplegeo/python-oauth2
+[django-oauth-plus]: https://bitbucket.org/david/django-oauth-plus/wiki/Home
+[django-oauth2-provider]: https://github.com/caffeinehit/django-oauth2-provider
 [0.4]: https://github.com/tomchristie/django-rest-framework/tree/0.4.X
 [image]: img/quickstart.png
+[index]: .
+[oauth1-section]: api-guide/authentication.html#oauthauthentication
+[oauth2-section]: api-guide/authentication.html#oauth2authentication
+[serializer-section]: api-guide/serializers.html#serializers
+[modelserializer-section]: api-guide/serializers.html#modelserializer
+[functionview-section]: api-guide/views.html#function-based-views
 [sandbox]: http://restframework.herokuapp.com/
 
 [quickstart]: tutorial/quickstart.md
@@ -176,15 +264,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 [tut-3]: tutorial/3-class-based-views.md
 [tut-4]: tutorial/4-authentication-and-permissions.md
 [tut-5]: tutorial/5-relationships-and-hyperlinked-apis.md
+[tut-6]: tutorial/6-viewsets-and-routers.md
 
 [request]: api-guide/requests.md
 [response]: api-guide/responses.md
 [views]: api-guide/views.md
 [generic-views]: api-guide/generic-views.md
+[viewsets]: api-guide/viewsets.md
+[routers]: api-guide/routers.md
 [parsers]: api-guide/parsers.md
 [renderers]: api-guide/renderers.md
 [serializers]: api-guide/serializers.md
 [fields]: api-guide/fields.md
+[relations]: api-guide/relations.md
 [authentication]: api-guide/authentication.md
 [permissions]: api-guide/permissions.md
 [throttling]: api-guide/throttling.md
@@ -197,15 +289,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 [status]: api-guide/status-codes.md
 [settings]: api-guide/settings.md
 
-[csrf]: topics/csrf.md
+[ajax-csrf-cors]: topics/ajax-csrf-cors.md
 [browser-enhancements]: topics/browser-enhancements.md
 [browsableapi]: topics/browsable-api.md
 [rest-hypermedia-hateoas]: topics/rest-hypermedia-hateoas.md
 [contributing]: topics/contributing.md
 [rest-framework-2-announcement]: topics/rest-framework-2-announcement.md
+[2.2-announcement]: topics/2.2-announcement.md
+[2.3-announcement]: topics/2.3-announcement.md
 [release-notes]: topics/release-notes.md
 [credits]: topics/credits.md
 
+[tox]: http://testrun.org/tox/latest/
+
 [group]: https://groups.google.com/forum/?fromgroups#!forum/django-rest-framework
-[DabApps]: http://dabapps.com
-[email]: mailto:tom@tomchristie.com
+[stack-overflow]: http://stackoverflow.com/
+[django-rest-framework-tag]: http://stackoverflow.com/questions/tagged/django-rest-framework
+[django-tag]: http://stackoverflow.com/questions/tagged/django
+[security-mail]: mailto:rest-framework-security@googlegroups.com
+[paid-support]: http://dabapps.com/services/build/api-development/
+[dabapps]: http://dabapps.com
+[contact-dabapps]: http://dabapps.com/contact/
+[twitter]: https://twitter.com/_tomchristie

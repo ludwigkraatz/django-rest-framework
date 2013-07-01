@@ -1,55 +1,18 @@
 """
-Provides an APIView class that is used as the base of all class-based views.
+Provides an APIView class that is the base of all views in REST framework.
 """
+from __future__ import unicode_literals
 
-import re
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
-from django.utils.html import escape
-from django.utils.safestring import mark_safe
+from django.utils.datastructures import SortedDict
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status, exceptions
-from rest_framework.compat import View, apply_markdown
-from rest_framework.response import Response
+from rest_framework.compat import View, HttpResponseBase
 from rest_framework.request import Request
+from rest_framework.response import Response
 from rest_framework.settings import api_settings
-from rest_framework import fields
-
-
-def _remove_trailing_string(content, trailing):
-    """
-    Strip trailing component `trailing` from `content` if it exists.
-    Used when generating names from view classes.
-    """
-    if content.endswith(trailing) and content != trailing:
-        return content[:-len(trailing)]
-    return content
-
-
-def _remove_leading_indent(content):
-    """
-    Remove leading indent from a block of text.
-    Used when generating descriptions from docstrings.
-    """
-    whitespace_counts = [len(line) - len(line.lstrip(' '))
-                         for line in content.splitlines()[1:] if line.lstrip()]
-
-    # unindent the content if needed
-    if whitespace_counts:
-        whitespace_pattern = '^' + (' ' * min(whitespace_counts))
-        content = re.sub(re.compile(whitespace_pattern, re.MULTILINE), '', content)
-    content = content.strip('\n')
-    return content
-
-
-def _camelcase_to_spaces(content):
-    """
-    Translate 'CamelCaseNames' to 'Camel Case Names'.
-    Used when generating names from view classes.
-    """
-    camelcase_boundry = '(((?<=[a-z])[A-Z])|([A-Z](?![A-Z]|$)))'
-    content = re.sub(camelcase_boundry, ' \\1', content).strip()
-    return ' '.join(content.split('_')).title()
+from rest_framework.utils.formatting import get_view_name, get_view_description
 
 
 class APIView(View):
@@ -65,22 +28,21 @@ class APIView(View):
     @classmethod
     def as_view(cls, **initkwargs):
         """
-        Override the default :meth:`as_view` to store an instance of the view
-        as an attribute on the callable function.  This allows us to discover
-        information about the view when we do URL reverse lookups.
+        Store the original class on the view function.
+
+        This allows us to discover information about the view when we do URL
+        reverse lookups.  Used for breadcrumb generation.
         """
-        # TODO: deprecate?
         view = super(APIView, cls).as_view(**initkwargs)
-        view.cls_instance = cls(**initkwargs)
+        view.cls = cls
         return view
 
     @property
     def allowed_methods(self):
         """
-        Return the list of allowed HTTP methods, uppercased.
+        Wrap Django's private `_allowed_methods` interface in a public property.
         """
-        return [method.upper() for method in self.http_method_names
-                if hasattr(self, method)]
+        return self._allowed_methods()
 
     @property
     def default_response_headers(self):
@@ -91,57 +53,10 @@ class APIView(View):
             'Vary': 'Accept'
         }
 
-    def get_name(self):
-        """
-        Return the resource or view class name for use as this view's name.
-        Override to customize.
-        """
-        # TODO: deprecate?
-        name = self.__class__.__name__
-        name = _remove_trailing_string(name, 'View')
-        return _camelcase_to_spaces(name)
-
-    def get_description(self, html=False):
-        """
-        Return the resource or view docstring for use as this view's description.
-        Override to customize.
-        """
-        # TODO: deprecate?
-        description = self.__doc__ or ''
-        description = _remove_leading_indent(description)
-        if html:
-            return self.markup_description(description)
-        return description
-
-    def markup_description(self, description):
-        """
-        Apply HTML markup to the description of this view.
-        """
-        # TODO: deprecate?
-        if apply_markdown:
-            description = apply_markdown(description)
-        else:
-            description = escape(description).replace('\n', '<br />')
-        return mark_safe(description)
-
-    def metadata(self, request):
-        return {
-            'name': self.get_name(),
-            'description': self.get_description(),
-            'renders': [renderer.media_type for renderer in self.renderer_classes],
-            'parses': [parser.media_type for parser in self.parser_classes],
-        }
-        #  TODO: Add 'fields', from serializer info, if it exists.
-        # serializer = self.get_serializer()
-        # if serializer is not None:
-        #     field_name_types = {}
-        #     for name, field in form.fields.iteritems():
-        #         field_name_types[name] = field.__class__.__name__
-        #     content['fields'] = field_name_types
-
     def http_method_not_allowed(self, request, *args, **kwargs):
         """
-        Called if `request.method` does not correspond to a handler method.
+        If `request.method` does not correspond to a handler method,
+        determine what kind of exception to raise.
         """
         raise exceptions.MethodNotAllowed(request.method)
 
@@ -149,6 +64,8 @@ class APIView(View):
         """
         If request is not permitted, determine what kind of exception to raise.
         """
+        if not self.request.successful_authenticator:
+            raise exceptions.NotAuthenticated()
         raise exceptions.PermissionDenied()
 
     def throttled(self, request, wait):
@@ -156,6 +73,15 @@ class APIView(View):
         If request is throttled, determine what kind of exception to raise.
         """
         raise exceptions.Throttled(wait)
+
+    def get_authenticate_header(self, request):
+        """
+        If a request is unauthenticated, determine the WWW-Authenticate
+        header to use for 401 responses, if any.
+        """
+        authenticators = self.get_authenticators()
+        if authenticators:
+            return authenticators[0].authenticate_header(request)
 
     def get_parser_context(self, http_request):
         """
@@ -201,13 +127,13 @@ class APIView(View):
 
     def get_parsers(self):
         """
-        Instantiates and returns the list of renderers that this view can use.
+        Instantiates and returns the list of parsers that this view can use.
         """
         return [parser() for parser in self.parser_classes]
 
     def get_authenticators(self):
         """
-        Instantiates and returns the list of renderers that this view can use.
+        Instantiates and returns the list of authenticators that this view can use.
         """
         return [auth() for auth in self.authentication_classes]
 
@@ -242,23 +168,43 @@ class APIView(View):
 
         try:
             return conneg.select_renderer(request, renderers, self.format_kwarg)
-        except:
+        except Exception:
             if force:
                 return (renderers[0], renderers[0].media_type)
             raise
 
-    def has_permission(self, request, obj=None):
+    def perform_authentication(self, request):
         """
-        Return `True` if the request should be permitted.
+        Perform authentication on the incoming request.
+
+        Note that if you override this and simply 'pass', then authentication
+        will instead be performed lazily, the first time either
+        `request.user` or `request.auth` is accessed.
+        """
+        request.user
+
+    def check_permissions(self, request):
+        """
+        Check if the request should be permitted.
+        Raises an appropriate exception if the request is not permitted.
         """
         for permission in self.get_permissions():
-            if not permission.has_permission(request, self, obj):
-                return False
-        return True
+            if not permission.has_permission(request, self):
+                self.permission_denied(request)
+
+    def check_object_permissions(self, request, obj):
+        """
+        Check if the request should be permitted for a given object.
+        Raises an appropriate exception if the request is not permitted.
+        """
+        for permission in self.get_permissions():
+            if not permission.has_object_permission(request, self, obj):
+                self.permission_denied(request)
 
     def check_throttles(self, request):
         """
         Check if request should be throttled.
+        Raises an appropriate exception if the request is throttled.
         """
         for throttle in self.get_throttles():
             if not throttle.allow_request(request, self):
@@ -285,8 +231,8 @@ class APIView(View):
         self.format_kwarg = self.get_format_suffix(**kwargs)
 
         # Ensure that the incoming request is permitted
-        if not self.has_permission(request):
-            self.permission_denied(request)
+        self.perform_authentication(request)
+        self.check_permissions(request)
         self.check_throttles(request)
 
         # Perform content negotiation and store the accepted info on the request
@@ -314,6 +260,13 @@ class APIView(View):
         """
         Returns the final response object.
         """
+        # Make the error obvious if a proper response is not returned
+        assert isinstance(response, HttpResponseBase), (
+            'Expected a `Response`, `HttpResponse` or `HttpStreamingResponse` '
+            'to be returned from the view, but received a `%s`'
+            % type(response)
+        )
+
         if isinstance(response, Response):
             if not getattr(request, 'accepted_renderer', None):
                 neg = self.perform_content_negotiation(request, force=True)
@@ -337,6 +290,16 @@ class APIView(View):
             # Throttle wait header
             self.headers['X-Throttle-Wait-Seconds'] = '%d' % exc.wait
 
+        if isinstance(exc, (exceptions.NotAuthenticated,
+                            exceptions.AuthenticationFailed)):
+            # WWW-Authenticate header for 401 responses, else coerce to 403
+            auth_header = self.get_authenticate_header(self.request)
+
+            if auth_header:
+                self.headers['WWW-Authenticate'] = auth_header
+            else:
+                exc.status_code = status.HTTP_403_FORBIDDEN
+
         if isinstance(exc, exceptions.APIException):
             return Response({'detail': exc.detail},
                             status=exc.status_code,
@@ -359,10 +322,10 @@ class APIView(View):
         `.dispatch()` is pretty much the same as Django's regular dispatch,
         but with extra hooks for startup, finalize, and exception handling.
         """
-        request = self.initialize_request(request, *args, **kwargs)
-        self.request = request
         self.args = args
         self.kwargs = kwargs
+        request = self.initialize_request(request, *args, **kwargs)
+        self.request = request
         self.headers = self.default_response_headers  # deprecate?
 
         try:
@@ -391,3 +354,23 @@ class APIView(View):
         """
         headers = self.get_response_headers(request)
         return Response(self.metadata(request), status=status.HTTP_200_OK, headers=headers)
+        return Response(self.metadata(request), status=status.HTTP_200_OK)
+
+    def metadata(self, request):
+        """
+        Return a dictionary of metadata about the view.
+        Used to return responses for OPTIONS requests.
+        """
+
+        # This is used by ViewSets to disambiguate instance vs list views
+        view_name_suffix = getattr(self, 'suffix', None)
+
+        # By default we can't provide any form-like information, however the
+        # generic views override this implementation and add additional
+        # information for POST and PUT methods, based on the serializer.
+        ret = SortedDict()
+        ret['name'] = get_view_name(self.__class__, view_name_suffix)
+        ret['description'] = get_view_description(self.__class__)
+        ret['renders'] = [renderer.media_type for renderer in self.renderer_classes]
+        ret['parses'] = [parser.media_type for parser in self.parser_classes]
+        return ret

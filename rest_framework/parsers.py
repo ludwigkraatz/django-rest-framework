@@ -4,15 +4,16 @@ Parsers are used to parse the content of incoming HTTP requests.
 They give us a generic way of being able to handle various media types
 on the request, such as form content or json encoded data.
 """
-
+from __future__ import unicode_literals
+from django.conf import settings
+from django.core.files.uploadhandler import StopFutureHandlers
 from django.http import QueryDict
 from django.http.multipartparser import MultiPartParser as DjangoMultiPartParser
-from django.http.multipartparser import MultiPartParserError
-from django.utils import simplejson as json
-from rest_framework.compat import yaml, ETParseError
+from django.http.multipartparser import MultiPartParserError, parse_header, ChunkIter
+from rest_framework.compat import yaml, etree
 from rest_framework.exceptions import ParseError
-from xml.etree import ElementTree as ET
-from xml.parsers.expat import ExpatError
+from rest_framework.compat import six
+import json
 import datetime
 import decimal
 
@@ -54,10 +55,14 @@ class JSONParser(BaseParser):
         `data` will be an object which is the parsed content of the response.
         `files` will always be `None`.
         """
+        parser_context = parser_context or {}
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+
         try:
-            return json.load(stream)
-        except ValueError, exc:
-            raise ParseError('JSON parse error - %s' % unicode(exc))
+            data = stream.read().decode(encoding)
+            return json.loads(data)
+        except ValueError as exc:
+            raise ParseError('JSON parse error - %s' % six.text_type(exc))
 
 
 class YAMLParser(BaseParser):
@@ -74,10 +79,16 @@ class YAMLParser(BaseParser):
         `data` will be an object which is the parsed content of the response.
         `files` will always be `None`.
         """
+        assert yaml, 'YAMLParser requires pyyaml to be installed'
+
+        parser_context = parser_context or {}
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+
         try:
-            return yaml.safe_load(stream)
-        except (ValueError, yaml.parser.ParserError), exc:
-            raise ParseError('YAML parse error - %s' % unicode(exc))
+            data = stream.read().decode(encoding)
+            return yaml.safe_load(data)
+        except (ValueError, yaml.parser.ParserError) as exc:
+            raise ParseError('YAML parse error - %s' % six.u(exc))
 
 
 class FormParser(BaseParser):
@@ -94,7 +105,9 @@ class FormParser(BaseParser):
         `data` will be a :class:`QueryDict` containing all the form parameters.
         `files` will always be :const:`None`.
         """
-        data = QueryDict(stream.read())
+        parser_context = parser_context or {}
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+        data = QueryDict(stream.read(), encoding=encoding)
         return data
 
 
@@ -114,15 +127,16 @@ class MultiPartParser(BaseParser):
         """
         parser_context = parser_context or {}
         request = parser_context['request']
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
         meta = request.META
         upload_handlers = request.upload_handlers
 
         try:
-            parser = DjangoMultiPartParser(meta, stream, upload_handlers)
+            parser = DjangoMultiPartParser(meta, stream, upload_handlers, encoding)
             data, files = parser.parse()
             return DataAndFiles(data, files)
-        except MultiPartParserError, exc:
-            raise ParseError('Multipart form parse error - %s' % unicode(exc))
+        except MultiPartParserError as exc:
+            raise ParseError('Multipart form parse error - %s' % six.u(exc))
 
 
 class XMLParser(BaseParser):
@@ -133,10 +147,15 @@ class XMLParser(BaseParser):
     media_type = 'application/xml'
 
     def parse(self, stream, media_type=None, parser_context=None):
+        assert etree, 'XMLParser requires defusedxml to be installed'
+
+        parser_context = parser_context or {}
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+        parser = etree.DefusedXMLParser(encoding=encoding)
         try:
-            tree = ET.parse(stream)
-        except (ExpatError, ETParseError, ValueError), exc:
-            raise ParseError('XML parse error - %s' % unicode(exc))
+            tree = etree.parse(stream, parser=parser, forbid_dtd=True)
+        except (etree.ParseError, ValueError) as exc:
+            raise ParseError('XML parse error - %s' % six.u(exc))
         data = self._xml_convert(tree.getroot())
 
         return data
@@ -146,7 +165,7 @@ class XMLParser(BaseParser):
         convert the xml `element` into the corresponding python object
         """
 
-        children = element.getchildren()
+        children = list(element)
 
         if len(children) == 0:
             return self._type_convert(element.text)
@@ -187,3 +206,90 @@ class XMLParser(BaseParser):
             pass
 
         return value
+
+
+class FileUploadParser(BaseParser):
+    """
+    Parser for file upload data.
+    """
+    media_type = '*/*'
+
+    def parse(self, stream, media_type=None, parser_context=None):
+        """
+        Returns a DataAndFiles object.
+
+        `.data` will be None (we expect request body to be a file content).
+        `.files` will be a `QueryDict` containing one 'file' element.
+        """
+
+        parser_context = parser_context or {}
+        request = parser_context['request']
+        encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
+        meta = request.META
+        upload_handlers = request.upload_handlers
+        filename = self.get_filename(stream, media_type, parser_context)
+
+        # Note that this code is extracted from Django's handling of
+        # file uploads in MultiPartParser.
+        content_type = meta.get('HTTP_CONTENT_TYPE',
+                                meta.get('CONTENT_TYPE', ''))
+        try:
+            content_length = int(meta.get('HTTP_CONTENT_LENGTH',
+                                          meta.get('CONTENT_LENGTH', 0)))
+        except (ValueError, TypeError):
+            content_length = None
+
+        # See if the handler will want to take care of the parsing.
+        for handler in upload_handlers:
+            result = handler.handle_raw_input(None,
+                                              meta,
+                                              content_length,
+                                              None,
+                                              encoding)
+            if result is not None:
+                return DataAndFiles(None, {'file': result[1]})
+
+        # This is the standard case.
+        possible_sizes = [x.chunk_size for x in upload_handlers if x.chunk_size]
+        chunk_size = min([2 ** 31 - 4] + possible_sizes)
+        chunks = ChunkIter(stream, chunk_size)
+        counters = [0] * len(upload_handlers)
+
+        for handler in upload_handlers:
+            try:
+                handler.new_file(None, filename, content_type,
+                                 content_length, encoding)
+            except StopFutureHandlers:
+                break
+
+        for chunk in chunks:
+            for i, handler in enumerate(upload_handlers):
+                chunk_length = len(chunk)
+                chunk = handler.receive_data_chunk(chunk, counters[i])
+                counters[i] += chunk_length
+                if chunk is None:
+                    break
+
+        for i, handler in enumerate(upload_handlers):
+            file_obj = handler.file_complete(counters[i])
+            if file_obj:
+                return DataAndFiles(None, {'file': file_obj})
+        raise ParseError("FileUpload parse error - "
+                         "none of upload handlers can handle the stream")
+
+    def get_filename(self, stream, media_type, parser_context):
+        """
+        Detects the uploaded file name. First searches a 'filename' url kwarg.
+        Then tries to parse Content-Disposition header.
+        """
+        try:
+            return parser_context['kwargs']['filename']
+        except KeyError:
+            pass
+
+        try:
+            meta = parser_context['request'].META
+            disposition = parse_header(meta['HTTP_CONTENT_DISPOSITION'])
+            return disposition[1]['filename']
+        except (AttributeError, KeyError):
+            pass

@@ -2,21 +2,75 @@
 The `compat` module provides support for backwards compatibility with older
 versions of django/python, and compatibility wrappers around optional packages.
 """
+
 # flake8: noqa
+from __future__ import unicode_literals
+
 import django
+from django.core.exceptions import ImproperlyConfigured
+
+# Try to import six from Django, fallback to included `six`.
+try:
+    from django.utils import six
+except ImportError:
+    from rest_framework import six
+
+# location of patterns, url, include changes in 1.4 onwards
+try:
+    from django.conf.urls import patterns, url, include
+except ImportError:
+    from django.conf.urls.defaults import patterns, url, include
+
+# Handle django.utils.encoding rename:
+# smart_unicode -> smart_text
+# force_unicode -> force_text
+try:
+    from django.utils.encoding import smart_text
+except ImportError:
+    from django.utils.encoding import smart_unicode as smart_text
+try:
+    from django.utils.encoding import force_text
+except ImportError:
+    from django.utils.encoding import force_unicode as force_text
+
+
+# HttpResponseBase only exists from 1.5 onwards
+try:
+    from django.http.response import HttpResponseBase
+except ImportError:
+    from django.http import HttpResponse as HttpResponseBase
 
 # django-filter is optional
 try:
     import django_filters
-except:
+except ImportError:
     django_filters = None
 
 
 # cStringIO only if it's available, otherwise StringIO
 try:
-    import cStringIO as StringIO
+    import cStringIO.StringIO as StringIO
 except ImportError:
-    import StringIO
+    StringIO = six.StringIO
+
+BytesIO = six.BytesIO
+
+
+# urlparse compat import (Required because it changed in python 3.x)
+try:
+    from urllib import parse as urlparse
+except ImportError:
+    import urlparse
+
+
+# Try to import PIL in either of the two ways it can end up installed.
+try:
+    from PIL import Image
+except ImportError:
+    try:
+        import Image
+    except ImportError:
+        Image = None
 
 
 def get_concrete_model(model_cls):
@@ -30,20 +84,12 @@ def get_concrete_model(model_cls):
 # Django 1.5 add support for custom auth user model
 if django.VERSION >= (1, 5):
     from django.conf import settings
-    if hasattr(settings, 'AUTH_USER_MODEL'):
-        User = settings.AUTH_USER_MODEL
-    else:
-        from django.contrib.auth.models import User
+    AUTH_USER_MODEL = settings.AUTH_USER_MODEL
 else:
-    try:
-        from django.contrib.auth.models import User
-    except ImportError:
-        raise ImportError(u"User model is not to be found.")
+    AUTH_USER_MODEL = 'auth.User'
 
 
-# First implementation of Django class-based views did not include head method
-# in base View class - https://code.djangoproject.com/ticket/15668
-if django.VERSION >= (1, 4):
+if django.VERSION >= (1, 5):
     from django.views.generic import View
 else:
     from django.views.generic import View as _View
@@ -51,6 +97,8 @@ else:
     from django.utils.functional import update_wrapper
 
     class View(_View):
+        # 1.3 does not include head method in base View class
+        # See: https://code.djangoproject.com/ticket/15668
         @classonlymethod
         def as_view(cls, **initkwargs):
             """
@@ -59,11 +107,11 @@ else:
             # sanitize keyword arguments
             for key in initkwargs:
                 if key in cls.http_method_names:
-                    raise TypeError(u"You tried to pass in the %s method name as a "
-                                    u"keyword argument to %s(). Don't do that."
+                    raise TypeError("You tried to pass in the %s method name as a "
+                                    "keyword argument to %s(). Don't do that."
                                     % (key, cls.__name__))
                 if not hasattr(cls, key):
-                    raise TypeError(u"%s() received an invalid keyword %r" % (
+                    raise TypeError("%s() received an invalid keyword %r" % (
                         cls.__name__, key))
 
             def view(request, *args, **kwargs):
@@ -80,6 +128,16 @@ else:
             update_wrapper(view, cls.dispatch, assigned=())
             return view
 
+        # _allowed_methods only present from 1.5 onwards
+        def _allowed_methods(self):
+            return [m.upper() for m in self.http_method_names if hasattr(self, m)]
+
+
+# PATCH method is not implemented by Django
+if 'patch' not in View.http_method_names:
+    View.http_method_names = View.http_method_names + ['patch']
+
+
 # PUT, DELETE do not require CSRF until 1.4.  They should.  Make it better.
 if django.VERSION >= (1, 4):
     from django.middleware.csrf import CsrfViewMiddleware
@@ -88,7 +146,6 @@ else:
     import re
     import random
     import logging
-    import urlparse
 
     from django.conf import settings
     from django.core.urlresolvers import get_callable
@@ -130,7 +187,8 @@ else:
         randrange = random.SystemRandom().randrange
     else:
         randrange = random.randrange
-    _MAX_CSRF_KEY = 18446744073709551616L     # 2 << 63
+
+    _MAX_CSRF_KEY = 18446744073709551616      # 2 << 63
 
     REASON_NO_REFERER = "Referer checking failed - no Referer."
     REASON_BAD_REFERER = "Referer checking failed - %s does not match %s."
@@ -297,7 +355,7 @@ except ImportError:
 
 # dateparse is ALSO new in Django 1.4
 try:
-    from django.utils.dateparse import parse_date, parse_datetime
+    from django.utils.dateparse import parse_date, parse_datetime, parse_time
 except ImportError:
     import datetime
     import re
@@ -344,6 +402,40 @@ except ImportError:
             return datetime.datetime(**kw)
 
 
+# smart_urlquote is new on Django 1.4
+try:
+    from django.utils.html import smart_urlquote
+except ImportError:
+    import re
+    from django.utils.encoding import smart_str
+    try:
+        from urllib.parse import quote, urlsplit, urlunsplit
+    except ImportError:     # Python 2
+        from urllib import quote
+        from urlparse import urlsplit, urlunsplit
+
+    unquoted_percents_re = re.compile(r'%(?![0-9A-Fa-f]{2})')
+
+    def smart_urlquote(url):
+        "Quotes a URL if it isn't already quoted."
+        # Handle IDN before quoting.
+        scheme, netloc, path, query, fragment = urlsplit(url)
+        try:
+            netloc = netloc.encode('idna').decode('ascii')  # IDN -> ACE
+        except UnicodeError:  # invalid domain part
+            pass
+        else:
+            url = urlunsplit((scheme, netloc, path, query, fragment))
+
+        # An URL is considered unquoted if it contains no % characters or
+        # contains a % not followed by two hexadecimal digits. See #9655.
+        if '%' not in url or unquoted_percents_re.search(url):
+            # See http://bugs.python.org/issue2637
+            url = quote(smart_str(url), safe=b'!*\'();:@&=+$,/?#[]~')
+
+        return force_text(url)
+
+
 # Markdown is optional
 try:
     import markdown
@@ -370,8 +462,60 @@ except ImportError:
     yaml = None
 
 
-# xml.etree.parse only throws ParseError for python >= 2.7
+# XML is optional
 try:
-    from xml.etree import ParseError as ETParseError
-except ImportError:  # python < 2.7
-    ETParseError = None
+    import defusedxml.ElementTree as etree
+except ImportError:
+    etree = None
+
+# OAuth is optional
+try:
+    # Note: The `oauth2` package actually provides oauth1.0a support.  Urg.
+    import oauth2 as oauth
+except ImportError:
+    oauth = None
+
+# OAuth is optional
+try:
+    import oauth_provider
+    from oauth_provider.store import store as oauth_provider_store
+except (ImportError, ImproperlyConfigured):
+    oauth_provider = None
+    oauth_provider_store = None
+
+# OAuth 2 support is optional
+try:
+    import provider.oauth2 as oauth2_provider
+    from provider.oauth2 import models as oauth2_provider_models
+    from provider.oauth2 import forms as oauth2_provider_forms
+    from provider import scope as oauth2_provider_scope
+    from provider import constants as oauth2_constants
+    from provider import __version__ as provider_version
+    if provider_version in ('0.2.3', '0.2.4'):
+        # 0.2.3 and 0.2.4 are supported version that do not support
+        # timezone aware datetimes
+        import datetime
+        provider_now = datetime.datetime.now
+    else:
+        # Any other supported version does use timezone aware datetimes
+        from django.utils.timezone import now as provider_now
+except ImportError:
+    oauth2_provider = None
+    oauth2_provider_models = None
+    oauth2_provider_forms = None
+    oauth2_provider_scope = None
+    oauth2_constants = None
+    provider_now = None
+
+# Handle lazy strings
+from django.utils.functional import Promise
+
+if six.PY3:
+    def is_non_str_iterable(obj):
+        if (isinstance(obj, str) or
+            (isinstance(obj, Promise) and obj._delegate_text)):
+            return False
+        return hasattr(obj, '__iter__')
+else:
+    def is_non_str_iterable(obj):
+        return hasattr(obj, '__iter__')

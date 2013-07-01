@@ -1,14 +1,96 @@
+from __future__ import unicode_literals, absolute_import
 from django import template
-from django.core.urlresolvers import reverse
+from django.core.urlresolvers import reverse, NoReverseMatch
 from django.http import QueryDict
-from django.utils.encoding import force_unicode
 from django.utils.html import escape
 from django.utils.safestring import SafeData, mark_safe
-from urlparse import urlsplit, urlunsplit
-import re
-import string
+from rest_framework.compat import urlparse, force_text, six, smart_urlquote
+import re, string
 
 register = template.Library()
+
+
+# Note we don't use 'load staticfiles', because we need a 1.3 compatible
+# version, so instead we include the `static` template tag ourselves.
+
+# When 1.3 becomes unsupported by REST framework, we can instead start to
+# use the {% load staticfiles %} tag, remove the following code,
+# and add a dependency that `django.contrib.staticfiles` must be installed.
+
+# Note: We can't put this into the `compat` module because the compat import
+# from rest_framework.compat import ...
+# conflicts with this rest_framework template tag module.
+
+try:  # Django 1.5+
+    from django.contrib.staticfiles.templatetags.staticfiles import StaticFilesNode
+
+    @register.tag('static')
+    def do_static(parser, token):
+        return StaticFilesNode.handle_token(parser, token)
+
+except ImportError:
+    try:  # Django 1.4
+        from django.contrib.staticfiles.storage import staticfiles_storage
+
+        @register.simple_tag
+        def static(path):
+            """
+            A template tag that returns the URL to a file
+            using staticfiles' storage backend
+            """
+            return staticfiles_storage.url(path)
+
+    except ImportError:  # Django 1.3
+        from urlparse import urljoin
+        from django import template
+        from django.templatetags.static import PrefixNode
+
+        class StaticNode(template.Node):
+            def __init__(self, varname=None, path=None):
+                if path is None:
+                    raise template.TemplateSyntaxError(
+                        "Static template nodes must be given a path to return.")
+                self.path = path
+                self.varname = varname
+
+            def url(self, context):
+                path = self.path.resolve(context)
+                return self.handle_simple(path)
+
+            def render(self, context):
+                url = self.url(context)
+                if self.varname is None:
+                    return url
+                context[self.varname] = url
+                return ''
+
+            @classmethod
+            def handle_simple(cls, path):
+                return urljoin(PrefixNode.handle_simple("STATIC_URL"), path)
+
+            @classmethod
+            def handle_token(cls, parser, token):
+                """
+                Class method to parse prefix node and return a Node.
+                """
+                bits = token.split_contents()
+
+                if len(bits) < 2:
+                    raise template.TemplateSyntaxError(
+                        "'%s' takes at least one argument (path to file)" % bits[0])
+
+                path = parser.compile_filter(bits[1])
+
+                if len(bits) >= 2 and bits[-2] == 'as':
+                    varname = bits[3]
+                else:
+                    varname = None
+
+                return cls(varname, path)
+
+        @register.tag('static')
+        def do_static_13(parser, token):
+            return StaticNode.handle_token(parser, token)
 
 
 def replace_query_param(url, key, val):
@@ -16,31 +98,15 @@ def replace_query_param(url, key, val):
     Given a URL and a key/val pair, set or replace an item in the query
     parameters of the URL, and return the new URL.
     """
-    (scheme, netloc, path, query, fragment) = urlsplit(url)
+    (scheme, netloc, path, query, fragment) = urlparse.urlsplit(url)
     query_dict = QueryDict(query).copy()
     query_dict[key] = val
     query = query_dict.urlencode()
-    return urlunsplit((scheme, netloc, path, query, fragment))
+    return urlparse.urlunsplit((scheme, netloc, path, query, fragment))
 
 
 # Regex for adding classes to html snippets
 class_re = re.compile(r'(?<=class=["\'])(.*)(?=["\'])')
-
-
-# Bunch of stuff cloned from urlize
-LEADING_PUNCTUATION = ['(', '<', '&lt;', '"', "'"]
-TRAILING_PUNCTUATION = ['.', ',', ')', '>', '\n', '&gt;', '"', "'"]
-DOTS = ['&middot;', '*', '\xe2\x80\xa2', '&#149;', '&bull;', '&#8226;']
-unencoded_ampersands_re = re.compile(r'&(?!(\w+|#\d+);)')
-word_split_re = re.compile(r'(\s+)')
-punctuation_re = re.compile('^(?P<lead>(?:%s)*)(?P<middle>.*?)(?P<trail>(?:%s)*)$' % \
-    ('|'.join([re.escape(x) for x in LEADING_PUNCTUATION]),
-    '|'.join([re.escape(x) for x in TRAILING_PUNCTUATION])))
-simple_email_re = re.compile(r'^\S+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+$')
-link_target_attribute_re = re.compile(r'(<a [^>]*?)target=[^\s>]+')
-html_gunk_re = re.compile(r'(?:<br clear="all">|<i><\/i>|<b><\/b>|<em><\/em>|<strong><\/strong>|<\/?smallcaps>|<\/?uppercase>)', re.IGNORECASE)
-hard_coded_bullets_re = re.compile(r'((?:<p>(?:%s).*?[a-zA-Z].*?</p>\s*)+)' % '|'.join([re.escape(x) for x in DOTS]), re.DOTALL)
-trailing_empty_content_re = re.compile(r'(?:<p>(?:&nbsp;|\s|<br \/>)*?</p>\s*)+\Z')
 
 
 # And the template tags themselves...
@@ -52,7 +118,7 @@ def optional_login(request):
     """
     try:
         login_url = reverse('rest_framework:login')
-    except:
+    except NoReverseMatch:
         return ''
 
     snippet = "<a href='%s?next=%s'>Log in</a>" % (login_url, request.path)
@@ -66,7 +132,7 @@ def optional_logout(request):
     """
     try:
         logout_url = reverse('rest_framework:logout')
-    except:
+    except NoReverseMatch:
         return ''
 
     snippet = "<a href='%s?next=%s'>Log out</a>" % (logout_url, request.path)
@@ -96,7 +162,7 @@ def add_class(value, css_class):
     In the case of REST Framework, the filter is used to add Bootstrap-specific
     classes to the forms.
     """
-    html = unicode(value)
+    html = six.text_type(value)
     match = class_re.search(html)
     if match:
         m = re.search(r'^%s$|^%s\s|\s%s\s|\s%s$' % (css_class, css_class,
@@ -110,15 +176,25 @@ def add_class(value, css_class):
     return value
 
 
+# Bunch of stuff cloned from urlize
+TRAILING_PUNCTUATION = ['.', ',', ':', ';', '.)', '"', "'"]
+WRAPPING_PUNCTUATION = [('(', ')'), ('<', '>'), ('[', ']'), ('&lt;', '&gt;'),
+                        ('"', '"'), ("'", "'")]
+word_split_re = re.compile(r'(\s+)')
+simple_url_re = re.compile(r'^https?://\[?\w', re.IGNORECASE)
+simple_url_2_re = re.compile(r'^www\.|^(?!http)\w[^@]+\.(com|edu|gov|int|mil|net|org)$', re.IGNORECASE)
+simple_email_re = re.compile(r'^\S+@\S+\.\S+$')
+
+
 @register.filter
 def urlize_quoted_links(text, trim_url_limit=None, nofollow=True, autoescape=True):
     """
     Converts any URLs in text into clickable links.
 
-    Works on http://, https://, www. links and links ending in .org, .net or
-    .com. Links can have trailing punctuation (periods, commas, close-parens)
-    and leading punctuation (opening parens) and it'll still do the right
-    thing.
+    Works on http://, https://, www. links, and also on links ending in one of
+    the original seven gTLDs (.com, .edu, .gov, .int, .mil, .net, and .org).
+    Links can have trailing punctuation (periods, commas, close-parens) and
+    leading punctuation (opening parens) and it'll still do the right thing.
 
     If trim_url_limit is not None, the URLs in link text longer than this limit
     will truncated to trim_url_limit-3 characters and appended with an elipsis.
@@ -130,25 +206,42 @@ def urlize_quoted_links(text, trim_url_limit=None, nofollow=True, autoescape=Tru
     """
     trim_url = lambda x, limit=trim_url_limit: limit is not None and (len(x) > limit and ('%s...' % x[:max(0, limit - 3)])) or x
     safe_input = isinstance(text, SafeData)
-    words = word_split_re.split(force_unicode(text))
-    nofollow_attr = nofollow and ' rel="nofollow"' or ''
+    words = word_split_re.split(force_text(text))
     for i, word in enumerate(words):
         match = None
         if '.' in word or '@' in word or ':' in word:
-            match = punctuation_re.match(word)
-        if match:
-            lead, middle, trail = match.groups()
+            # Deal with punctuation.
+            lead, middle, trail = '', word, ''
+            for punctuation in TRAILING_PUNCTUATION:
+                if middle.endswith(punctuation):
+                    middle = middle[:-len(punctuation)]
+                    trail = punctuation + trail
+            for opening, closing in WRAPPING_PUNCTUATION:
+                if middle.startswith(opening):
+                    middle = middle[len(opening):]
+                    lead = lead + opening
+                # Keep parentheses at the end only if they're balanced.
+                if (middle.endswith(closing)
+                    and middle.count(closing) == middle.count(opening) + 1):
+                    middle = middle[:-len(closing)]
+                    trail = closing + trail
+
             # Make URL we want to point to.
             url = None
-            if middle.startswith('http://') or middle.startswith('https://'):
-                url = middle
-            elif middle.startswith('www.') or ('@' not in middle and \
-                    middle and middle[0] in string.ascii_letters + string.digits and \
-                    (middle.endswith('.org') or middle.endswith('.net') or middle.endswith('.com'))):
-                url = 'http://%s' % middle
-            elif '@' in middle and not ':' in middle and simple_email_re.match(middle):
-                url = 'mailto:%s' % middle
+            nofollow_attr = ' rel="nofollow"' if nofollow else ''
+            if simple_url_re.match(middle):
+                url = smart_urlquote(middle)
+            elif simple_url_2_re.match(middle):
+                url = smart_urlquote('http://%s' % middle)
+            elif not ':' in middle and simple_email_re.match(middle):
+                local, domain = middle.rsplit('@', 1)
+                try:
+                    domain = domain.encode('idna').decode('ascii')
+                except UnicodeError:
+                    continue
+                url = 'mailto:%s@%s' % (local, domain)
                 nofollow_attr = ''
+
             # Make link.
             if url:
                 trimmed = trim_url(middle)
@@ -166,4 +259,15 @@ def urlize_quoted_links(text, trim_url_limit=None, nofollow=True, autoescape=Tru
             words[i] = mark_safe(word)
         elif autoescape:
             words[i] = escape(word)
-    return mark_safe(u''.join(words))
+    return ''.join(words)
+
+
+@register.filter
+def break_long_headers(header):
+    """
+    Breaks headers longer than 160 characters (~page length)
+    when possible (are comma separated)
+    """
+    if len(header) > 160 and ',' in header:
+        header = mark_safe('<br> ' + ', <br>'.join(header.split(',')))
+    return header

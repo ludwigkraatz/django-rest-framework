@@ -2,9 +2,9 @@
 
 The following people have helped make REST framework great.
 
-* Tom Christie - [tomchristie] 
+* Tom Christie - [tomchristie]
 * Marko Tibold - [markotibold]
-* Paul Bagwell - [pbgwl]
+* Paul Miller - [paulmillr]
 * Sébastien Piquemal - [sebpiq]
 * Carmen Wick - [cwick]
 * Alex Ehlke - [aehlke]
@@ -19,7 +19,7 @@ The following people have helped make REST framework great.
 * Craig Blaszczyk - [jakul]
 * Garcia Solero - [garciasolero]
 * Tom Drummond - [devioustree]
-* Danilo Bargen - [gwrtheyrn]
+* Danilo Bargen - [dbrgn]
 * Andrew McCloud - [amccloud]
 * Thomas Steinacher - [thomasst]
 * Meurig Freeman - [meurig]
@@ -71,6 +71,79 @@ The following people have helped make REST framework great.
 * Fabian Buechler - [fabianbuechler]
 * Mark Hughes - [mhsparks]
 * Michael van de Waeter - [mvdwaeter]
+* Reinout van Rees - [reinout]
+* Michael Richards - [justanotherbody]
+* Ben Roberts - [roberts81]
+* Venkata Subramanian Mahalingam - [annacoder]
+* George Kappel - [gkappel]
+* Colin Murtaugh - [cmurtaugh]
+* Simon Pantzare - [pilt]
+* Szymon Teżewski - [sunscrapers]
+* Joel Marcotte - [joual]
+* Trey Hunner - [treyhunner]
+* Roman Akinfold - [akinfold]
+* Toran Billups - [toranb]
+* Sébastien Béal - [sebastibe]
+* Andrew Hankinson - [ahankinson]
+* Juan Riaza - [juanriaza]
+* Michael Mior - [michaelmior]
+* Marc Tamlyn - [mjtamlyn]
+* Richard Wackerbarth - [wackerbarth]
+* Johannes Spielmann - [shezi]
+* James Cleveland - [radiosilence]
+* Steve Gregory - [steve-gregory]
+* Federico Capoano - [nemesisdesign]
+* Bruno Renié - [brutasse]
+* Kevin Stone - [kevinastone]
+* Guglielmo Celata - [guglielmo]
+* Mike Tums - [mktums]
+* Michael Elovskikh - [wronglink]
+* Michał Jaworski - [swistakm]
+* Andrea de Marco - [z4r]
+* Fernando Rocha - [fernandogrd]
+* Xavier Ordoquy - [xordoquy]
+* Adam Wentz - [floppya]
+* Andreas Pelme - [pelme]
+* Ryan Detzel - [ryanrdetzel]
+* Omer Katz - [thedrow]
+* Wiliam Souza - [waa]
+* Jonas Braun - [iekadou]
+* Ian Dash - [bitmonkey]
+* Bouke Haarsma - [bouke]
+* Pierre Dulac - [dulaccc]
+* Dave Kuhn - [kuhnza]
+* Sitong Peng - [stoneg]
+* Victor Shih - [vshih]
+* Atle Frenvik Sveen - [atlefren]
+* J Paul Reed - [preed]
+* Matt Majewski - [forgingdestiny]
+* Jerome Chen - [chenjyw]
+* Andrew Hughes - [eyepulp]
+* Daniel Hepper - [dhepper]
+* Hamish Campbell - [hamishcampbell]
+* Marlon Bailey - [avinash240]
+* James Summerfield - [jsummerfield]
+* Andy Freeland - [rouge8]
+* Craig de Stigter - [craigds]
+* Pablo Recio - [pyriku]
+* Brian Zambrano - [brianz]
+* Òscar Vilaplana - [grimborg]
+* Ryan Kaskel - [ryankask]
+* Andy McKay - [andymckay]
+* Matteo Suppo - [matteosuppo]
+* Karol Majta - [lolek09]
+* David Jones - [commonorgarden]
+* Andrew Tarzwell - [atarzwell]
+* Michal Dvořák - [mikee2185]
+* Markus Törnqvist - [mjtorn]
+* Pascal Borreli - [pborreli]
+* Alex Burgel - [aburgel]
+* David Medina - [copitux]
+* Areski Belaid - [areski]
+* Ethan Freman - [mindlace]
+* David Sanders - [davesque]
+* Philip Douglas - [freakydug]
+* Igor Kalat - [trwired]
 
 Many thanks to everyone who's contributed to the project.
 
@@ -82,35 +155,36 @@ Project hosting is with [GitHub].
 
 Continuous integration testing is managed with [Travis CI][travis-ci].
 
-The [live sandbox][sandbox] is hosted on [Heroku]. 
+The [live sandbox][sandbox] is hosted on [Heroku].
 
-Various inspiration taken from the [Piston], [Tastypie] and [Dagny] projects.
+Various inspiration taken from the [Rails], [Piston], [Tastypie], [Dagny] and [django-viewsets] projects.
 
 Development of REST framework 2.0 was sponsored by [DabApps].
 
 ## Contact
 
-To contact the author directly:
+For usage questions please see the [REST framework discussion group][group].
 
-* twitter: [@_tomchristie][twitter]
-* email: [tom@tomchristie.com][email]
- 
-[email]: mailto:tom@tomchristie.com
+You can also contact [@_tomchristie][twitter] directly on twitter.
+
 [twitter]: http://twitter.com/_tomchristie
 [bootstrap]: http://twitter.github.com/bootstrap/
 [markdown]: http://daringfireball.net/projects/markdown/
 [github]: https://github.com/tomchristie/django-rest-framework
 [travis-ci]: https://secure.travis-ci.org/tomchristie/django-rest-framework
+[rails]: http://rubyonrails.org/
 [piston]: https://bitbucket.org/jespern/django-piston
 [tastypie]: https://github.com/toastdriven/django-tastypie
 [dagny]: https://github.com/zacharyvoase/dagny
+[django-viewsets]: https://github.com/BertrandBordage/django-viewsets
 [dabapps]: http://lab.dabapps.com
 [sandbox]: http://restframework.herokuapp.com/
 [heroku]: http://www.heroku.com/
+[group]: https://groups.google.com/forum/?fromgroups#!forum/django-rest-framework
 
 [tomchristie]: https://github.com/tomchristie
 [markotibold]: https://github.com/markotibold
-[pbgwl]: https://github.com/pbgwl
+[paulmillr]: https://github.com/paulmillr
 [sebpiq]: https://github.com/sebpiq
 [cwick]: https://github.com/cwick
 [aehlke]: https://github.com/aehlke
@@ -125,7 +199,7 @@ To contact the author directly:
 [jakul]: https://github.com/jakul
 [garciasolero]: https://github.com/garciasolero
 [devioustree]: https://github.com/devioustree
-[gwrtheyrn]: https://github.com/gwrtheyrn
+[dbrgn]: https://github.com/dbrgn
 [amccloud]: https://github.com/amccloud
 [thomasst]: https://github.com/thomasst
 [meurig]: https://github.com/meurig
@@ -177,3 +251,76 @@ To contact the author directly:
 [fabianbuechler]: https://github.com/fabianbuechler
 [mhsparks]: https://github.com/mhsparks
 [mvdwaeter]: https://github.com/mvdwaeter
+[reinout]: https://github.com/reinout
+[justanotherbody]: https://github.com/justanotherbody
+[roberts81]: https://github.com/roberts81
+[annacoder]: https://github.com/annacoder
+[gkappel]: https://github.com/gkappel
+[cmurtaugh]: https://github.com/cmurtaugh
+[pilt]: https://github.com/pilt
+[sunscrapers]: https://github.com/sunscrapers
+[joual]: https://github.com/joual
+[treyhunner]: https://github.com/treyhunner
+[akinfold]: https://github.com/akinfold
+[toranb]: https://github.com/toranb
+[sebastibe]: https://github.com/sebastibe
+[ahankinson]: https://github.com/ahankinson
+[juanriaza]: https://github.com/juanriaza
+[michaelmior]: https://github.com/michaelmior
+[mjtamlyn]: https://github.com/mjtamlyn
+[wackerbarth]: https://github.com/wackerbarth
+[shezi]: https://github.com/shezi
+[radiosilence]: https://github.com/radiosilence
+[steve-gregory]: https://github.com/steve-gregory
+[nemesisdesign]: https://github.com/nemesisdesign
+[brutasse]: https://github.com/brutasse
+[kevinastone]: https://github.com/kevinastone
+[guglielmo]: https://github.com/guglielmo
+[mktums]: https://github.com/mktums
+[wronglink]: https://github.com/wronglink
+[swistakm]: https://github.com/swistakm
+[z4r]: https://github.com/z4r
+[fernandogrd]: https://github.com/fernandogrd
+[xordoquy]: https://github.com/xordoquy
+[floppya]: https://github.com/floppya
+[pelme]: https://github.com/pelme
+[ryanrdetzel]: https://github.com/ryanrdetzel
+[thedrow]: https://github.com/thedrow
+[waa]: https://github.com/wiliamsouza
+[iekadou]: https://github.com/iekadou
+[bitmonkey]: https://github.com/bitmonkey
+[bouke]: https://github.com/bouke
+[dulaccc]: https://github.com/dulaccc
+[kuhnza]: https://github.com/kuhnza
+[stoneg]: https://github.com/stoneg
+[vshih]: https://github.com/vshih
+[atlefren]: https://github.com/atlefren
+[preed]: https://github.com/preed
+[forgingdestiny]: https://github.com/forgingdestiny
+[chenjyw]: https://github.com/chenjyw
+[eyepulp]: https://github.com/eyepulp
+[dhepper]: https://github.com/dhepper
+[hamishcampbell]: https://github.com/hamishcampbell
+[avinash240]: https://github.com/avinash240
+[jsummerfield]: https://github.com/jsummerfield
+[rouge8]: https://github.com/rouge8
+[craigds]: https://github.com/craigds
+[pyriku]: https://github.com/pyriku
+[brianz]: https://github.com/brianz
+[grimborg]: https://github.com/grimborg
+[ryankask]: https://github.com/ryankask
+[andymckay]: https://github.com/andymckay
+[matteosuppo]: https://github.com/matteosuppo
+[lolek09]: https://github.com/lolek09
+[commonorgarden]: https://github.com/commonorgarden
+[atarzwell]: https://github.com/atarzwell
+[mikee2185]: https://github.com/mikee2185
+[mjtorn]: https://github.com/mjtorn
+[pborreli]: https://github.com/pborreli
+[aburgel]: https://github.com/aburgel
+[copitux]: https://github.com/copitux
+[areski]: https://github.com/areski
+[mindlace]: https://github.com/mindlace
+[davesque]: https://github.com/davesque
+[freakydug]: https://github.com/freakydug
+[trwired]: https://github.com/trwired

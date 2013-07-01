@@ -4,6 +4,8 @@ DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 DEBUG_PROPAGATE_EXCEPTIONS = True
 
+ALLOWED_HOSTS = ['*']
+
 ADMINS = (
     # ('Your Name', 'your_email@domain.com'),
 )
@@ -97,10 +99,42 @@ INSTALLED_APPS = (
     # 'django.contrib.admindocs',
     'rest_framework',
     'rest_framework.authtoken',
-    'rest_framework.tests'
+    'rest_framework.tests',
 )
 
+# OAuth is optional and won't work if there is no oauth_provider & oauth2
+try:
+    import oauth_provider
+    import oauth2
+except ImportError:
+    pass
+else:
+    INSTALLED_APPS += (
+        'oauth_provider',
+    )
+
+try:
+    import provider
+except ImportError:
+    pass
+else:
+    INSTALLED_APPS += (
+        'provider',
+        'provider.oauth2',
+    )
+
 STATIC_URL = '/static/'
+
+PASSWORD_HASHERS = (
+    'django.contrib.auth.hashers.SHA1PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptPasswordHasher',
+    'django.contrib.auth.hashers.MD5PasswordHasher',
+    'django.contrib.auth.hashers.CryptPasswordHasher',
+)
+
+AUTH_USER_MODEL = 'auth.User'
 
 import django
 

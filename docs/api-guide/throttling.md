@@ -6,8 +6,6 @@
 >
 > [Twitter API rate limiting response][cite]
 
-[cite]: https://dev.twitter.com/docs/error-codes-responses
-
 Throttling is similar to [permissions], in that it determines if a request should be authorized.  Throttles indicate a temporary state, and are used to control the rate of requests that clients can make to an API.
 
 As with permissions, multiple throttles may be used.  Your API might have a restrictive throttle for unauthenticated requests, and a less restrictive throttle for authenticated requests.
@@ -42,7 +40,8 @@ The default throttling policy may be set globally, using the `DEFAULT_THROTTLE_C
 
 The rate descriptions used in `DEFAULT_THROTTLE_RATES` may include `second`, `minute`, `hour` or `day` as the throttle period.
 
-You can also set the throttling policy on a per-view basis, using the `APIView` class based views.
+You can also set the throttling policy on a per-view or per-viewset basis,
+using the `APIView` class based views.
 
     class ExampleView(APIView):
         throttle_classes = (UserThrottle,)
@@ -62,6 +61,10 @@ Or, if you're using the `@api_view` decorator with function based views.
             'status': 'request was permitted'
         }
         return Response(content)
+
+## Setting up the cache
+
+The throttle classes provided by REST framework use Django's cache backend.  You should make sure that you've set appropriate [cache settings][cache-setting].  The default value of `LocMemCache` backend should be okay for simple setups.  See Django's [cache documentation][cache-docs] for more details.
 
 ---
 
@@ -150,8 +153,19 @@ User requests to either `ContactListView` or `ContactDetailView` would be restri
 
 # Custom throttles
 
-To create a custom throttle, override `BaseThrottle` and implement `.allow_request(request, view)`.  The method should return `True` if the request should be allowed, and `False` otherwise.
+To create a custom throttle, override `BaseThrottle` and implement `.allow_request(self, request, view)`.  The method should return `True` if the request should be allowed, and `False` otherwise.
 
 Optionally you may also override the `.wait()` method.  If implemented, `.wait()` should return a recommended number of seconds to wait before attempting the next request, or `None`.  The `.wait()` method will only be called if `.allow_request()` has previously returned `False`.
 
+## Example
+
+The following is an example of a rate throttle, that will randomly throttle 1 in every 10 requests.
+
+    class RandomRateThrottle(throttles.BaseThrottle):
+        def allow_request(self, request, view):
+            return random.randint(1, 10) == 1
+
+[cite]: https://dev.twitter.com/docs/error-codes-responses
 [permissions]: permissions.md
+[cache-setting]: https://docs.djangoproject.com/en/dev/ref/settings/#caches
+[cache-docs]: https://docs.djangoproject.com/en/dev/topics/cache/#setting-up-the-cache

@@ -1,39 +1,33 @@
 # Django REST framework
 
-**A toolkit for building well-connected, self-describing web APIs.**
-
-**Author:** Tom Christie.  [Follow me on Twitter][twitter]
+**Awesome web-browseable Web APIs.**
 
 [![build-status-image]][travis]
 
----
-
-**Full documentation for REST framework is available on [http://django-rest-framework.org][docs].**
-
-Note that this is the 2.0 version of REST framework.  If you are looking for earlier versions please see the [0.4.x branch][0.4] on GitHub.
-
----
+**Note**: Full documentation for the project is available at [http://django-rest-framework.org][docs].
 
 # Overview
 
-Django REST framework is a lightweight library that makes it easy to build Web APIs.  It is designed as a modular and easy to customize architecture, based on Django's class based views.
+Django REST framework is a powerful and flexible toolkit that makes it easy to build Web APIs.
 
-Web APIs built using REST framework are fully self-describing and web browseable - a huge useability win for your developers.  It also supports a wide range of media types, authentication and permission policies out of the box.
+Some reasons you might want to use REST framework:
 
-If you are considering using REST framework for your API, we recommend reading the [REST framework 2 announcment][rest-framework-2-announcement] which gives a good overview of the framework and it's capabilities.
+* The [Web browseable API][sandbox] is a huge useability win for your developers.
+* [Authentication policies][authentication] including [OAuth1a][oauth1-section] and [OAuth2][oauth2-section] out of the box.
+* [Serialization][serializers] that supports both [ORM][modelserializer-section] and [non-ORM][serializer-section] data sources.
+* Customizable all the way down - just use [regular function-based views][functionview-section] if you don't need the [more][generic-views] [powerful][viewsets] [features][routers].
+* [Extensive documentation][index], and [great community support][group].
 
-There is also a sandbox API you can use for testing purposes, [available here][sandbox].
+There is a live example API for testing purposes, [available here][sandbox].
+
+**Below**: *Screenshot from the browseable API*
+
+![Screenshot][image]
 
 # Requirements
 
-* Python (2.6, 2.7)
-* Django (1.3, 1.4, 1.5)
-
-**Optional:**
-
-* [Markdown] - Markdown support for the self describing API.
-* [PyYAML] - YAML content type support.
-* [django-filter] - Filtering support.
+* Python (2.6.5+, 2.7, 3.2, 3.3)
+* Django (1.3, 1.4, 1.5, 1.6)
 
 # Installation
 
@@ -41,111 +35,82 @@ Install using `pip`...
 
     pip install djangorestframework
 
-...or clone the project from github.
+Add `'rest_framework'` to your `INSTALLED_APPS` setting.
 
-    git clone git@github.com:tomchristie/django-rest-framework.git
-    pip install -r requirements.txt
+    INSTALLED_APPS = (
+        ...
+        'rest_framework',        
+    )
 
-# Development
+# Example
 
-To build the docs.
+Let's take a look at a quick example of using REST framework to build a simple model-backed API for accessing users and groups.
 
-    ./mkdocs.py
+Here's our project's root `urls.py` module:
 
-To run the tests.
+    from django.conf.urls.defaults import url, patterns, include
+    from django.contrib.auth.models import User, Group
+    from rest_framework import viewsets, routers
 
-    ./rest_framework/runtests/runtests.py
+    # ViewSets define the view behavior.
+    class UserViewSet(viewsets.ModelViewSet):
+        model = User
 
-# Changelog
+    class GroupViewSet(viewsets.ModelViewSet):
+        model = Group
 
-## 2.1.6
+    
+    # Routers provide an easy way of automatically determining the URL conf
+    router = routers.DefaultRouter()
+    router.register(r'users', UserViewSet)
+    router.register(r'groups', GroupViewSet)
 
-**Date**: 23rd Nov 2012
 
-* Bugfix: Unfix DjangoModelPermissions.  (I am a doofus.)
+    # Wire up our API using automatic URL routing.
+    # Additionally, we include login URLs for the browseable API.
+    urlpatterns = patterns('',
+        url(r'^', include(router.urls)),
+        url(r'^api-auth/', include('rest_framework.urls', namespace='rest_framework'))
+    )
 
-## 2.1.5
+We'd also like to configure a couple of settings for our API.
 
-**Date**: 23rd Nov 2012
+Add the following to your `settings.py` module:
 
-* Bugfix: Fix DjangoModelPermissions.
+    REST_FRAMEWORK = {
+        # Use hyperlinked styles by default.
+        # Only used if the `serializer_class` attribute is not set on a view.
+        'DEFAULT_MODEL_SERIALIZER_CLASS':
+            'rest_framework.serializers.HyperlinkedModelSerializer',
 
-## 2.1.4
+        # Use Django's standard `django.contrib.auth` permissions,
+        # or allow read-only access for unauthenticated users.
+        'DEFAULT_PERMISSION_CLASSES': [
+            'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
+        ]
+    }
 
-**Date**: 22nd Nov 2012
+Don't forget to make sure you've also added `rest_framework` to your `INSTALLED_APPS` setting.
 
-* Support for partial updates with serializers.
-* Added `RegexField`.
-* Added `SerializerMethodField`.
-* Serializer performance improvements.
-* Added `obtain_token_view` to get tokens when using `TokenAuthentication`.
-* Bugfix: Django 1.5 configurable user support for `TokenAuthentication`.
+That's it, we're done!
 
-## 2.1.3
+# Documentation & Support
 
-**Date**: 16th Nov 2012
+Full documentation for the project is available at [http://django-rest-framework.org][docs].
 
-* Added `FileField` and `ImageField`.  For use with `MultiPartParser`.
-* Added `URLField` and `SlugField`.
-* Support for `read_only_fields` on `ModelSerializer` classes.
-* Support for clients overriding the pagination page sizes.  Use the `PAGINATE_BY_PARAM` setting or set the `paginate_by_param` attribute on a generic view.
-* 201 Responses now return a 'Location' header.
-* Bugfix: Serializer fields now respect `max_length`.
+For questions and support, use the [REST framework discussion group][group], or `#restframework` on freenode IRC.
 
-## 2.1.2
+You may also want to [follow the author on Twitter][twitter].
 
-**Date**: 9th Nov 2012
+# Security
 
-* **Filtering support.**
-* Bugfix: Support creation of objects with reverse M2M relations.
+If you believe you’ve found something in Django REST framework which has security implications, please **do not raise the issue in a public forum**.
 
-## 2.1.1
-
-**Date**: 7th Nov 2012
-
-* Support use of HTML exception templates.  Eg. `403.html`
-* Hyperlinked fields take optional `slug_field`, `slug_url_kwarg` and `pk_url_kwarg` arguments.
-* Bugfix: Deal with optional trailing slashs properly when generating breadcrumbs.
-* Bugfix: Make textareas same width as other fields in browsable API.
-* Private API change: `.get_serializer` now uses same `instance` and `data` ordering as serializer initialization.
-
-## 2.1.0
-
-**Date**: 5th Nov 2012
-
-**Warning**: Please read [this thread][2.1.0-notes] regarding the `instance` and `data` keyword args before updating to 2.1.0.
-
-* **Serializer `instance` and `data` keyword args have their position swapped.**
-* `queryset` argument is now optional on writable model fields.
-* Hyperlinked related fields optionally take `slug_field` and `slug_field_kwarg` arguments.
-* Support Django's cache framework.
-* Minor field improvements. (Don't stringify dicts, more robust many-pk fields.)
-* Bugfixes (Support choice field in Browseable API)
-
-## 2.0.2
-
-**Date**: 2nd Nov 2012
-
-* Fix issues with pk related fields in the browsable API.
-
-## 2.0.1
-
-**Date**: 1st Nov 2012
-
-* Add support for relational fields in the browsable API.
-* Added SlugRelatedField and ManySlugRelatedField.
-* If PUT creates an instance return '201 Created', instead of '200 OK'.
-
-## 2.0.0
-
-**Date**: 30th Oct 2012
-
-* Redesign of core components.
-* Fix **all of the things**.
+Send a description of the issue via email to [rest-framework-security@googlegroups.com][security-mail].  The project maintainers will then work with you to resolve any issues where required, prior to any public disclosure.
 
 # License
 
-Copyright (c) 2011, Tom Christie
+Copyright (c) 2011-2013, Tom Christie
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without 
@@ -168,17 +133,39 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-[build-status-image]: https://secure.travis-ci.org/tomchristie/django-rest-framework.png?branch=restframework2
+[build-status-image]: https://secure.travis-ci.org/tomchristie/django-rest-framework.png?branch=master
 [travis]: http://travis-ci.org/tomchristie/django-rest-framework?branch=master
 [twitter]: https://twitter.com/_tomchristie
+[group]: https://groups.google.com/forum/?fromgroups#!forum/django-rest-framework
 [0.4]: https://github.com/tomchristie/django-rest-framework/tree/0.4.X
 [sandbox]: http://restframework.herokuapp.com/
+
+[index]: http://django-rest-framework.org/
+[oauth1-section]: http://django-rest-framework.org/api-guide/authentication.html#oauthauthentication
+[oauth2-section]: http://django-rest-framework.org/api-guide/authentication.html#oauth2authentication
+[serializer-section]: http://django-rest-framework.org/api-guide/serializers.html#serializers
+[modelserializer-section]: http://django-rest-framework.org/api-guide/serializers.html#modelserializer
+[functionview-section]: http://django-rest-framework.org/api-guide/views.html#function-based-views
+[generic-views]: http://django-rest-framework.org/api-guide/generic-views.html
+[viewsets]: http://django-rest-framework.org/api-guide/viewsets.html
+[routers]: http://django-rest-framework.org/api-guide/routers.html
+[serializers]: http://django-rest-framework.org/api-guide/serializers.html
+[authentication]: http://django-rest-framework.org/api-guide/authentication.html
+
 [rest-framework-2-announcement]: http://django-rest-framework.org/topics/rest-framework-2-announcement.html
 [2.1.0-notes]: https://groups.google.com/d/topic/django-rest-framework/Vv2M0CMY9bg/discussion
+[image]: http://django-rest-framework.org/img/quickstart.png
+
+[tox]: http://testrun.org/tox/latest/
+
+[tehjones]: https://twitter.com/tehjones/status/294986071979196416
+[wlonk]: https://twitter.com/wlonk/status/261689665952833536
+[laserllama]: https://twitter.com/laserllama/status/328688333750407168
 
 [docs]: http://django-rest-framework.org/
 [urlobject]: https://github.com/zacharyvoase/urlobject
 [markdown]: http://pypi.python.org/pypi/Markdown/
 [pyyaml]: http://pypi.python.org/pypi/PyYAML
-[django-filter]: https://github.com/alex/django-filter
-
+[defusedxml]: https://pypi.python.org/pypi/defusedxml
+[django-filter]: http://pypi.python.org/pypi/django-filter
+[security-mail]: mailto:rest-framework-security@googlegroups.com

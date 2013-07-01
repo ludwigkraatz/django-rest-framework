@@ -8,7 +8,7 @@ Let's introduce a couple of essential building blocks.
 REST framework introduces a `Request` object that extends the regular `HttpRequest`, and provides more flexible request parsing.  The core functionality of the `Request` object is the `request.DATA` attribute, which is similar to `request.POST`, but more useful for working with Web APIs.
 
     request.POST  # Only handles form data.  Only works for 'POST' method.
-    request.DATA  # Handles arbitrary data.  Works any HTTP request with content.
+    request.DATA  # Handles arbitrary data.  Works for 'POST', 'PUT' and 'PATCH' methods.
 
 ## Response objects
 
@@ -31,7 +31,6 @@ These wrappers provide a few bits of functionality such as making sure you recei
 
 The wrappers also provide behaviour such as returning `405 Method Not Allowed` responses when appropriate, and handling any `ParseError` exception that occurs when accessing `request.DATA` with malformed input.
 
-
 ## Pulling it all together
 
 Okay, let's go ahead and start using these new components to write a few views. 
@@ -52,7 +51,7 @@ We don't need our `JSONResponse` class anymore, so go ahead and delete that.  On
         """
         if request.method == 'GET':
             snippets = Snippet.objects.all()
-            serializer = SnippetSerializer(snippets)
+            serializer = SnippetSerializer(snippets, many=True)
             return Response(serializer.data)
 
         elif request.method == 'POST':
@@ -63,8 +62,9 @@ We don't need our `JSONResponse` class anymore, so go ahead and delete that.  On
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 Our instance view is an improvement over the previous example.  It's a little more concise, and the code now feels very similar to if we were working with the Forms API.  We're also using named status codes, which makes the response meanings more obvious.
+
+Here is the view for an individual snippet.
 
     @api_view(['GET', 'PUT', 'DELETE'])
     def snippet_detail(request, pk):
@@ -75,11 +75,11 @@ Our instance view is an improvement over the previous example.  It's a little mo
             snippet = Snippet.objects.get(pk=pk)
         except Snippet.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
- 
+
         if request.method == 'GET':
             serializer = SnippetSerializer(snippet)
             return Response(serializer.data)
-    
+
         elif request.method == 'PUT':
             serializer = SnippetSerializer(snippet, data=request.DATA)
             if serializer.is_valid():
@@ -92,13 +92,13 @@ Our instance view is an improvement over the previous example.  It's a little mo
             snippet.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-This should all feel very familiar - there's not a lot different to working with regular Django views.
+This should all feel very familiar - it is not a lot different from working with regular Django views.
 
 Notice that we're no longer explicitly tying our requests or responses to a given content type.  `request.DATA` can handle incoming `json` requests, but it can also handle `yaml` and other formats.  Similarly we're returning response objects with data, but allowing REST framework to render the response into the correct content type for us.
 
 ## Adding optional format suffixes to our URLs
 
-To take advantage of the fact that our responses are no longer hardwired to a single content type let's add support for format suffixes to our API endpoints. Using format suffixes gives us URLs that explicitly refer to a given format, and means our API will be able to handle URLs such as [http://example.com/api/items/4.json][json-url].
+To take advantage of the fact that our responses are no longer hardwired to a single content type let's add support for format suffixes to our API endpoints.  Using format suffixes gives us URLs that explicitly refer to a given format, and means our API will be able to handle URLs such as [http://example.com/api/items/4.json][json-url].
 
 Start by adding a `format` keyword argument to both of the views, like so.
 
@@ -115,7 +115,7 @@ Now update the `urls.py` file slightly, to append a set of `format_suffix_patter
 
     urlpatterns = patterns('snippets.views',
         url(r'^snippets/$', 'snippet_list'),
-        url(r'^snippets/(?P<pk>[0-9]+)$', 'snippet_detail')
+        url(r'^snippets/(?P<pk>[0-9]+)$', 'snippet_detail'),
     )
     
     urlpatterns = format_suffix_patterns(urlpatterns)
@@ -126,16 +126,43 @@ We don't necessarily need to add these extra url patterns in, but it gives us a 
 
 Go ahead and test the API from the command line, as we did in [tutorial part 1][tut-1].  Everything is working pretty similarly, although we've got some nicer error handling if we send invalid requests.
 
-**TODO: Describe using accept headers, content-type headers, and format suffixed URLs**
+We can get a list of all of the snippets, as before.
 
-Now go and open the API in a web browser, by visiting [http://127.0.0.1:8000/snippets/][devserver]."
+	curl http://127.0.0.1:8000/snippets/
+
+	[{"id": 1, "title": "", "code": "foo = \"bar\"\n", "linenos": false, "language": "python", "style": "friendly"}, {"id": 2, "title": "", "code": "print \"hello, world\"\n", "linenos": false, "language": "python", "style": "friendly"}]
+
+We can control the format of the response that we get back, either by using the `Accept` header:
+
+    curl http://127.0.0.1:8000/snippets/ -H 'Accept: application/json'  # Request JSON
+    curl http://127.0.0.1:8000/snippets/ -H 'Accept: text/html'         # Request HTML
+
+Or by appending a format suffix:
+
+    curl http://127.0.0.1:8000/snippets/.json  # JSON suffix
+    curl http://127.0.0.1:8000/snippets/.api   # Browsable API suffix
+
+Similarly, we can control the format of the request that we send, using the `Content-Type` header.
+
+    # POST using form data
+    curl -X POST http://127.0.0.1:8000/snippets/ -d "code=print 123"
+
+    {"id": 3, "title": "", "code": "123", "linenos": false, "language": "python", "style": "friendly"}
+    
+    # POST using JSON
+    curl -X POST http://127.0.0.1:8000/snippets/ -d '{"code": "print 456"}' -H "Content-Type: application/json"
+
+    {"id": 4, "title": "", "code": "print 456", "linenos": true, "language": "python", "style": "friendly"}
+
+Now go and open the API in a web browser, by visiting [http://127.0.0.1:8000/snippets/][devserver].
 
 ### Browsability
 
-Because the API chooses a return format based on what the client asks for, it will, by default, return an HTML-formatted representation of the resource when that resource is requested by a browser. This allows for the API to be easily browsable and usable by humans.
+Because the API chooses the content type of the response based on the client request, it will, by default, return an HTML-formatted representation of the resource when that resource is requested by a web browser.  This allows for the API to return a fully web-browsable HTML representation.
 
-See the [browsable api][browseable-api] topic for more information about the browsable API feature and how to customize it.
+Having a web-browsable API is a huge usability win, and makes developing and using your API much easier.  It also dramatically lowers the barrier-to-entry for other developers wanting to inspect and work with your API.
 
+See the [browsable api][browsable-api] topic for more information about the browsable API feature and how to customize it.
 
 ## What's next?
 
@@ -143,6 +170,6 @@ In [tutorial part 3][tut-3], we'll start using class based views, and see how ge
 
 [json-url]: http://example.com/api/items/4.json
 [devserver]: http://127.0.0.1:8000/snippets/
-[browseable-api]: ../topics/browsable-api.md
+[browsable-api]: ../topics/browsable-api.md
 [tut-1]: 1-serialization.md
 [tut-3]: 3-class-based-views.md

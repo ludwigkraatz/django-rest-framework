@@ -1,24 +1,31 @@
+"""
+Serializer fields perform validation on incoming data.
+
+They are very similar to Django's form fields.
+"""
+from __future__ import unicode_literals
+
 import copy
 import datetime
 import inspect
 import re
 import warnings
-
-from io import BytesIO
-
-from django.core import validators
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.core.urlresolvers import resolve, get_script_prefix
-from django.conf import settings
+from decimal import Decimal, DecimalException
 from django import forms
+from django.core import validators
+from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.db.models.fields import BLANK_CHOICE_DASH
 from django.forms import widgets
-from django.forms.models import ModelChoiceIterator
-from django.utils.encoding import is_protected_type, smart_unicode
+from django.utils.encoding import is_protected_type
 from django.utils.translation import ugettext_lazy as _
-from rest_framework.reverse import reverse
-from rest_framework.compat import parse_date, parse_datetime
-from rest_framework.compat import timezone
-from urlparse import urlparse
+from django.utils.datastructures import SortedDict
+from rest_framework import ISO_8601
+from rest_framework.compat import (
+    timezone, parse_date, parse_datetime, parse_time, BytesIO, six, smart_text,
+    force_text, is_non_str_iterable
+)
+from rest_framework.settings import api_settings
 
 class Empty(object):
     """
@@ -31,26 +38,97 @@ def is_simple_callable(obj):
     """
     True if the object is a callable that takes no arguments.
     """
-    return (
-        (inspect.isfunction(obj) and not inspect.getargspec(obj)[0]) or
-        (inspect.ismethod(obj) and len(inspect.getargspec(obj)[0]) <= 1)
-    )
+    function = inspect.isfunction(obj)
+    method = inspect.ismethod(obj)
+
+    if not (function or method):
+        return False
+
+    args, _, _, defaults = inspect.getargspec(obj)
+    len_args = len(args) if function else len(args) - 1
+    len_defaults = len(defaults) if defaults else 0
+    return len_args <= len_defaults
+
+
+def get_component(obj, attr_name):
+    """
+    Given an object, and an attribute name,
+    return that attribute on the object.
+    """
+    if isinstance(obj, dict):
+        val = obj.get(attr_name)
+    else:
+        val = getattr(obj, attr_name)
+
+    if is_simple_callable(val):
+        return val()
+    return val
+
+
+def readable_datetime_formats(formats):
+    format = ', '.join(formats).replace(ISO_8601,
+             'YYYY-MM-DDThh:mm[:ss[.uuuuuu]][+HHMM|-HHMM|Z]')
+    return humanize_strptime(format)
+
+
+def readable_date_formats(formats):
+    format = ', '.join(formats).replace(ISO_8601, 'YYYY[-MM[-DD]]')
+    return humanize_strptime(format)
+
+
+def readable_time_formats(formats):
+    format = ', '.join(formats).replace(ISO_8601, 'hh:mm[:ss[.uuuuuu]]')
+    return humanize_strptime(format)
+
+
+def humanize_strptime(format_string):
+    # Note that we're missing some of the locale specific mappings that
+    # don't really make sense.
+    mapping = {
+        "%Y": "YYYY",
+        "%y": "YY",
+        "%m": "MM",
+        "%b": "[Jan-Dec]",
+        "%B": "[January-December]",
+        "%d": "DD",
+        "%H": "hh",
+        "%I": "hh",  # Requires '%p' to differentiate from '%H'.
+        "%M": "mm",
+        "%S": "ss",
+        "%f": "uuuuuu",
+        "%a": "[Mon-Sun]",
+        "%A": "[Monday-Sunday]",
+        "%p": "[AM|PM]",
+        "%z": "[+HHMM|-HHMM]"
+    }
+    for key, val in mapping.items():
+        format_string = format_string.replace(key, val)
+    return format_string
 
 
 class Field(object):
+    read_only = True
     creation_counter = 0
     empty = ''
     type_name = None
-    _use_files = None
+    partial = False
+    use_files = False
     form_field_class = forms.CharField
+    type_label = 'field'
 
-    def __init__(self, source=None):
+    def __init__(self, source=None, label=None, help_text=None):
         self.parent = None
 
         self.creation_counter = Field.creation_counter
         Field.creation_counter += 1
 
         self.source = source
+
+        if label is not None:
+            self.label = smart_text(label)
+
+        if help_text is not None:
+            self.help_text = smart_text(help_text)
 
     def initialize(self, parent, field_name):
         """
@@ -62,7 +140,8 @@ class Field(object):
         self.parent = parent
         self.root = parent.root or parent
         self.context = self.root.context
-        if self.root.partial:
+        self.partial = self.root.partial
+        if self.partial:
             self.required = False
 
     def field_from_native(self, data, files, field_name, into):
@@ -83,14 +162,14 @@ class Field(object):
         if self.source == '*':
             return self.to_native(obj)
 
-        if self.source:
-            value = obj
-            for component in self.source.split('.'):
-                value = getattr(value, component)
-                if is_simple_callable(value):
-                    value = value()
-        else:
-            value = getattr(obj, field_name)
+        source = self.source or field_name
+        value = obj
+
+        for component in source.split('.'):
+            value = get_component(value, component)
+            if value is None:
+                break
+
         return self.to_native(value)
 
     def to_native(self, value):
@@ -102,11 +181,16 @@ class Field(object):
 
         if is_protected_type(value):
             return value
-        elif hasattr(value, '__iter__') and not isinstance(value, (dict, basestring)):
+        elif (is_non_str_iterable(value) and
+              not isinstance(value, (dict, six.string_types))):
             return [self.to_native(item) for item in value]
         elif isinstance(value, dict):
-            return dict(map(self.to_native, (k, v)) for k, v in value.items())
-        return smart_unicode(value)
+            # Make sure we preserve field ordering, if it exists
+            ret = SortedDict()
+            for key, val in value.items():
+                ret[key] = self.to_native(val)
+            return ret
+        return force_text(value)
 
     def attributes(self):
         """
@@ -115,6 +199,18 @@ class Field(object):
         if self.type_name:
             return {'type': self.type_name}
         return {}
+
+    def metadata(self):
+        metadata = SortedDict()
+        metadata['type'] = self.type_label
+        metadata['required'] = getattr(self, 'required', False)
+        optional_attrs = ['read_only', 'label', 'help_text',
+                          'min_length', 'max_length']
+        for attr in optional_attrs:
+            value = getattr(self, attr, None)
+            if value is not None and value != '':
+                metadata[attr] = force_text(value, strings_only=True)
+        return metadata
 
 
 class WritableField(Field):
@@ -129,17 +225,25 @@ class WritableField(Field):
     widget = widgets.TextInput
     default = None
 
-    def __init__(self, source=None, read_only=False, required=None,
+    def __init__(self, source=None, label=None, help_text=None,
+                 read_only=False, required=None,
                  validators=[], error_messages=None, widget=None,
                  default=None, blank=None):
 
-        super(WritableField, self).__init__(source=source)
+        # 'blank' is to be deprecated in favor of 'required'
+        if blank is not None:
+            warnings.warn('The `blank` keyword argument is deprecated. '
+                          'Use the `required` keyword argument instead.',
+                          DeprecationWarning, stacklevel=2)
+            required = not(blank)
+
+        super(WritableField, self).__init__(source=source, label=label, help_text=help_text)
 
         self.read_only = read_only
         if required is None:
             self.required = not(read_only)
         else:
-            assert not read_only, "Cannot set required=True and read_only=True"
+            assert not (read_only and required), "Cannot set required=True and read_only=True"
             self.required = required
 
         messages = {}
@@ -150,13 +254,18 @@ class WritableField(Field):
 
         self.validators = self.default_validators + validators
         self.default = default if default is not None else self.default
-        self.blank = blank
 
         # Widgets are ony used for HTML forms.
         widget = widget or self.widget
         if isinstance(widget, type):
             widget = widget()
         self.widget = widget
+
+    def __deepcopy__(self, memo):
+        result = copy.copy(self)
+        memo[id(self)] = result
+        result.validators = self.validators[:]
+        return result
 
     def validate(self, value):
         if value in validators.EMPTY_VALUES and self.required:
@@ -189,13 +298,18 @@ class WritableField(Field):
             return
 
         try:
-            if self._use_files:
+            if self.use_files:
+                files = files or {}
                 native = files[field_name]
             else:
                 native = data[field_name]
         except KeyError:
-            if self.default is not None:
-                native = self.default
+            if self.default is not None and not self.partial:
+                # Note: partial updates shouldn't set defaults
+                if is_simple_callable(self.default):
+                    native = self.default()
+                else:
+                    native = self.default
             else:
                 if self.required:
                     raise ValidationError(self.error_messages['required'])
@@ -224,13 +338,17 @@ class ModelField(WritableField):
     def __init__(self, *args, **kwargs):
         try:
             self.model_field = kwargs.pop('model_field')
-        except:
+        except KeyError:
             raise ValueError("ModelField requires 'model_field' kwarg")
 
         self.min_length = kwargs.pop('min_length',
-                            getattr(self.model_field, 'min_length', None))
+                                     getattr(self.model_field, 'min_length', None))
         self.max_length = kwargs.pop('max_length',
-                            getattr(self.model_field, 'max_length', None))
+                                     getattr(self.model_field, 'max_length', None))
+        self.min_value = kwargs.pop('min_value',
+                                    getattr(self.model_field, 'min_value', None))
+        self.max_value = kwargs.pop('max_value',
+                                    getattr(self.model_field, 'max_value', None))
 
         super(ModelField, self).__init__(*args, **kwargs)
 
@@ -238,6 +356,10 @@ class ModelField(WritableField):
             self.validators.append(validators.MinLengthValidator(self.min_length))
         if self.max_length is not None:
             self.validators.append(validators.MaxLengthValidator(self.max_length))
+        if self.min_value is not None:
+            self.validators.append(validators.MinValueValidator(self.min_value))
+        if self.max_value is not None:
+            self.validators.append(validators.MaxValueValidator(self.max_value))
 
     def from_native(self, value):
         rel = getattr(self.model_field, "rel", None)
@@ -257,466 +379,16 @@ class ModelField(WritableField):
             "type": self.model_field.get_internal_type()
         }
 
-##### Relational fields #####
-
-
-# Not actually Writable, but subclasses may need to be.
-class RelatedField(WritableField):
-    """
-    Base class for related model fields.
-
-    If not overridden, this represents a to-one relationship, using the unicode
-    representation of the target.
-    """
-    widget = widgets.Select
-    cache_choices = False
-    empty_label = None
-    default_read_only = True  # TODO: Remove this
-
-    def __init__(self, *args, **kwargs):
-        self.queryset = kwargs.pop('queryset', None)
-        super(RelatedField, self).__init__(*args, **kwargs)
-        self.read_only = kwargs.pop('read_only', self.default_read_only)
-
-    def initialize(self, parent, field_name):
-        super(RelatedField, self).initialize(parent, field_name)
-        if self.queryset is None and not self.read_only:
-            try:
-                manager = getattr(self.parent.opts.model, self.source or field_name)
-                if hasattr(manager, 'related'):  # Forward
-                    self.queryset = manager.related.model._default_manager.all()
-                else:  # Reverse
-                    self.queryset = manager.field.rel.to._default_manager.all()
-            except:
-                raise
-                msg = ('Serializer related fields must include a `queryset`' +
-                       ' argument or set `read_only=True')
-                raise Exception(msg)
-
-    ### We need this stuff to make form choices work...
-
-    # def __deepcopy__(self, memo):
-    #     result = super(RelatedField, self).__deepcopy__(memo)
-    #     result.queryset = result.queryset
-    #     return result
-
-    def prepare_value(self, obj):
-        return self.to_native(obj)
-
-    def label_from_instance(self, obj):
-        """
-        Return a readable representation for use with eg. select widgets.
-        """
-        desc = smart_unicode(obj)
-        ident = smart_unicode(self.to_native(obj))
-        if desc == ident:
-            return desc
-        return "%s - %s" % (desc, ident)
-
-    def _get_queryset(self):
-        return self._queryset
-
-    def _set_queryset(self, queryset):
-        self._queryset = queryset
-        self.widget.choices = self.choices
-
-    queryset = property(_get_queryset, _set_queryset)
-
-    def _get_choices(self):
-        # If self._choices is set, then somebody must have manually set
-        # the property self.choices. In this case, just return self._choices.
-        if hasattr(self, '_choices'):
-            return self._choices
-
-        # Otherwise, execute the QuerySet in self.queryset to determine the
-        # choices dynamically. Return a fresh ModelChoiceIterator that has not been
-        # consumed. Note that we're instantiating a new ModelChoiceIterator *each*
-        # time _get_choices() is called (and, thus, each time self.choices is
-        # accessed) so that we can ensure the QuerySet has not been consumed. This
-        # construct might look complicated but it allows for lazy evaluation of
-        # the queryset.
-        return ModelChoiceIterator(self)
-
-    def _set_choices(self, value):
-        # Setting choices also sets the choices on the widget.
-        # choices can be any iterable, but we call list() on it because
-        # it will be consumed more than once.
-        self._choices = self.widget.choices = list(value)
-
-    choices = property(_get_choices, _set_choices)
-
-    ### Regular serializer stuff...
-
-    def field_to_native(self, obj, field_name):
-        value = getattr(obj, self.source or field_name)
-        return self.to_native(value)
-
-    def field_from_native(self, data, files, field_name, into):
-        if self.read_only:
-            return
-
-        value = data.get(field_name)
-        into[(self.source or field_name)] = self.from_native(value)
-
-
-class ManyRelatedMixin(object):
-    """
-    Mixin to convert a related field to a many related field.
-    """
-    widget = widgets.SelectMultiple
-
-    def field_to_native(self, obj, field_name):
-        value = getattr(obj, self.source or field_name)
-        return [self.to_native(item) for item in value.all()]
-
-    def field_from_native(self, data, files, field_name, into):
-        if self.read_only:
-            return
-
-        try:
-            # Form data
-            value = data.getlist(self.source or field_name)
-        except:
-            # Non-form data
-            value = data.get(self.source or field_name)
-        else:
-            if value == ['']:
-                value = []
-        into[field_name] = [self.from_native(item) for item in value]
-
-
-class ManyRelatedField(ManyRelatedMixin, RelatedField):
-    """
-    Base class for related model managers.
-
-    If not overridden, this represents a to-many relationship, using the unicode
-    representations of the target, and is read-only.
-    """
-    pass
-
-
-### PrimaryKey relationships
-
-class PrimaryKeyRelatedField(RelatedField):
-    """
-    Represents a to-one relationship as a pk value.
-    """
-    default_read_only = False
-    form_field_class = forms.ChoiceField
-
-    # TODO: Remove these field hacks...
-    def prepare_value(self, obj):
-        return self.to_native(obj.pk)
-
-    def label_from_instance(self, obj):
-        """
-        Return a readable representation for use with eg. select widgets.
-        """
-        desc = smart_unicode(obj)
-        ident = smart_unicode(self.to_native(obj.pk))
-        if desc == ident:
-            return desc
-        return "%s - %s" % (desc, ident)
-
-    # TODO: Possibly change this to just take `obj`, through prob less performant
-    def to_native(self, pk):
-        return pk
-
-    def from_native(self, data):
-        if self.queryset is None:
-            raise Exception('Writable related fields must include a `queryset` argument')
-
-        try:
-            return self.queryset.get(pk=data)
-        except ObjectDoesNotExist:
-            msg = "Invalid pk '%s' - object does not exist." % smart_unicode(data)
-            raise ValidationError(msg)
-
-    def field_to_native(self, obj, field_name):
-        try:
-            # Prefer obj.serializable_value for performance reasons
-            pk = obj.serializable_value(self.source or field_name)
-        except AttributeError:
-            # RelatedObject (reverse relationship)
-            obj = getattr(obj, self.source or field_name)
-            return self.to_native(obj.pk)
-        # Forward relationship
-        return self.to_native(pk)
-
-
-class ManyPrimaryKeyRelatedField(ManyRelatedField):
-    """
-    Represents a to-many relationship as a pk value.
-    """
-    default_read_only = False
-    form_field_class = forms.MultipleChoiceField
-
-    def prepare_value(self, obj):
-        return self.to_native(obj.pk)
-
-    def label_from_instance(self, obj):
-        """
-        Return a readable representation for use with eg. select widgets.
-        """
-        desc = smart_unicode(obj)
-        ident = smart_unicode(self.to_native(obj.pk))
-        if desc == ident:
-            return desc
-        return "%s - %s" % (desc, ident)
-
-    def to_native(self, pk):
-        return pk
-
-    def field_to_native(self, obj, field_name):
-        try:
-            # Prefer obj.serializable_value for performance reasons
-            queryset = obj.serializable_value(self.source or field_name)
-        except AttributeError:
-            # RelatedManager (reverse relationship)
-            queryset = getattr(obj, self.source or field_name)
-            return [self.to_native(item.pk) for item in queryset.all()]
-        # Forward relationship
-        return [self.to_native(item.pk) for item in queryset.all()]
-
-    def from_native(self, data):
-        if self.queryset is None:
-            raise Exception('Writable related fields must include a `queryset` argument')
-
-        try:
-            return self.queryset.get(pk=data)
-        except ObjectDoesNotExist:
-            msg = "Invalid pk '%s' - object does not exist." % smart_unicode(data)
-            raise ValidationError(msg)
-
-### Slug relationships
-
-
-class SlugRelatedField(RelatedField):
-    default_read_only = False
-    form_field_class = forms.ChoiceField
-
-    def __init__(self, *args, **kwargs):
-        self.slug_field = kwargs.pop('slug_field', None)
-        assert self.slug_field, 'slug_field is required'
-        super(SlugRelatedField, self).__init__(*args, **kwargs)
-
-    def to_native(self, obj):
-        return getattr(obj, self.slug_field)
-
-    def from_native(self, data):
-        if self.queryset is None:
-            raise Exception('Writable related fields must include a `queryset` argument')
-
-        try:
-            return self.queryset.get(**{self.slug_field: data})
-        except ObjectDoesNotExist:
-            raise ValidationError('Object with %s=%s does not exist.' %
-                                  (self.slug_field, unicode(data)))
-
-
-class ManySlugRelatedField(ManyRelatedMixin, SlugRelatedField):
-    form_field_class = forms.MultipleChoiceField
-
-
-### Hyperlinked relationships
-
-class HyperlinkedRelatedField(RelatedField):
-    """
-    Represents a to-one relationship, using hyperlinking.
-    """
-    pk_url_kwarg = 'pk'
-    slug_field = 'slug'
-    slug_url_kwarg = None  # Defaults to same as `slug_field` unless overridden
-    default_read_only = False
-    form_field_class = forms.ChoiceField
-
-    def __init__(self, *args, **kwargs):
-        try:
-            self.view_name = kwargs.pop('view_name')
-        except:
-            raise ValueError("Hyperlinked field requires 'view_name' kwarg")
-        
-        self.view_namespace = kwargs.pop('view_namespace', Empty)
-
-        self.slug_field = kwargs.pop('slug_field', self.slug_field)
-        default_slug_kwarg = self.slug_url_kwarg or self.slug_field
-        self.pk_url_kwarg = kwargs.pop('pk_url_kwarg', self.pk_url_kwarg)
-        self.slug_url_kwarg = kwargs.pop('slug_url_kwarg', default_slug_kwarg)
-
-        self.format = kwargs.pop('format', None)
-        super(HyperlinkedRelatedField, self).__init__(*args, **kwargs)
-
-    def initialize(self, parent, field_name):
-        super(HyperlinkedRelatedField, self).initialize(parent, field_name)
-        
-        if self.view_namespace is Empty:
-            self.view_namespace = getattr(self.parent.opts, 'view_namespace', None)
-            
-        if self.view_namespace:
-            self.view_name = '%(namespace)s:%(name)s' % {'namespace': self.view_namespace, 'name': self.view_name} 
-
-    def get_slug_field(self):
-        """
-        Get the name of a slug field to be used to look up by slug.
-        """
-        return self.slug_field
-
-    def to_native(self, obj):
-        view_name = self.view_name
-            
-        request = self.context.get('request', None)
-        format = self.format or self.context.get('format', None)
-        pk = getattr(obj, 'pk', None)
-        if pk is None:
-            return
-        kwargs = {self.pk_url_kwarg: pk}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        slug = getattr(obj, self.slug_field, None)
-
-        if not slug:
-            raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
-
-        kwargs = {self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        kwargs = {self.pk_url_kwarg: obj.pk, self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        raise ValidationError('Could not resolve URL for field using view name "%s"', view_name)
-
-    def from_native(self, value):
-        # Convert URL -> model instance pk
-        # TODO: Use values_list
-        if self.queryset is None:
-            raise Exception('Writable related fields must include a `queryset` argument')
-
-        if value.startswith('http:') or value.startswith('https:'):
-            # If needed convert absolute URLs to relative path
-            value = urlparse(value).path
-            prefix = get_script_prefix()
-            if value.startswith(prefix):
-                value = '/' + value[len(prefix):]
-
-        try:
-            match = resolve(value)
-        except:
-            raise ValidationError('Invalid hyperlink - No URL match')
-
-        if match.url_name != self.view_name:
-            raise ValidationError('Invalid hyperlink - Incorrect URL match')
-
-        pk = match.kwargs.get(self.pk_url_kwarg, None)
-        slug = match.kwargs.get(self.slug_url_kwarg, None)
-
-        # Try explicit primary key.
-        if pk is not None:
-            queryset = self.queryset.filter(pk=pk)
-        # Next, try looking up by slug.
-        elif slug is not None:
-            slug_field = self.get_slug_field()
-            queryset = self.queryset.filter(**{slug_field: slug})
-        # If none of those are defined, it's an error.
-        else:
-            raise ValidationError('Invalid hyperlink')
-
-        try:
-            obj = queryset.get()
-        except ObjectDoesNotExist:
-            raise ValidationError('Invalid hyperlink - object does not exist.')
-        return obj
-
-
-class ManyHyperlinkedRelatedField(ManyRelatedMixin, HyperlinkedRelatedField):
-    """
-    Represents a to-many relationship, using hyperlinking.
-    """
-    form_field_class = forms.MultipleChoiceField
-
-
-class HyperlinkedIdentityField(Field):
-    """
-    Represents the instance, or a property on the instance, using hyperlinking.
-    """
-    pk_url_kwarg = 'pk'
-    slug_field = 'slug'
-    slug_url_kwarg = None  # Defaults to same as `slug_field` unless overridden
-
-    def __init__(self, *args, **kwargs):
-        try:
-            self.view_name = kwargs.pop('view_name')
-        except:
-            raise ValueError("Hyperlinked Identity field requires 'view_name' kwarg")
-        
-        self.view_namespace = kwargs.pop('view_namespace', Empty)
-        
-        self.format = kwargs.pop('format', None)
-
-        self.slug_field = kwargs.pop('slug_field', self.slug_field)
-        default_slug_kwarg = self.slug_url_kwarg or self.slug_field
-        self.pk_url_kwarg = kwargs.pop('pk_url_kwarg', self.pk_url_kwarg)
-        self.slug_url_kwarg = kwargs.pop('slug_url_kwarg', default_slug_kwarg)
-
-        super(HyperlinkedIdentityField, self).__init__(*args, **kwargs)        
-
-    def initialize(self, parent, field_name):
-        super(HyperlinkedIdentityField, self).initialize(parent, field_name)
-        
-        if self.view_namespace is Empty:
-            self.view_namespace = getattr(self.parent.opts, 'view_namespace', None)
-            
-        if self.view_namespace:
-            self.view_name = '%(namespace)s:%(name)s' % {'namespace': self.view_namespace, 'name': self.view_name} 
-        
-
-    def field_to_native(self, obj, field_name):
-        request = self.context.get('request', None)
-        format = self.format or self.context.get('format', None)
-        view_name = self.view_name
-        
-        kwargs = {self.pk_url_kwarg: obj.pk}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        slug = getattr(obj, self.slug_field, None)
-
-        if not slug:
-            raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
-
-        kwargs = {self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        kwargs = {self.pk_url_kwarg: obj.pk, self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except:
-            pass
-
-        raise ValidationError('Could not resolve URL for field using view name "%s"' % view_name)
-
 
 ##### Typed Fields #####
 
 class BooleanField(WritableField):
     type_name = 'BooleanField'
+    type_label = 'boolean'
     form_field_class = forms.BooleanField
     widget = widgets.CheckboxInput
     default_error_messages = {
-        'invalid': _(u"'%s' value must be either True or False."),
+        'invalid': _("'%s' value must be either True or False."),
     }
     empty = False
 
@@ -726,15 +398,16 @@ class BooleanField(WritableField):
     default = False
 
     def from_native(self, value):
-        if value in ('t', 'True', '1'):
+        if value in ('true', 't', 'True', '1'):
             return True
-        if value in ('f', 'False', '0'):
+        if value in ('false', 'f', 'False', '0'):
             return False
         return bool(value)
 
 
 class CharField(WritableField):
     type_name = 'CharField'
+    type_label = 'string'
     form_field_class = forms.CharField
 
     def __init__(self, max_length=None, min_length=None, *args, **kwargs):
@@ -745,50 +418,51 @@ class CharField(WritableField):
         if max_length is not None:
             self.validators.append(validators.MaxLengthValidator(max_length))
 
-    def validate(self, value):
-        """
-        Validates that the value is supplied (if required).
-        """
-        # if empty string and allow blank
-        if self.blank and not value:
-            return
-        else:
-            super(CharField, self).validate(value)
-
     def from_native(self, value):
-        if isinstance(value, basestring) or value is None:
+        if isinstance(value, six.string_types) or value is None:
             return value
-        return smart_unicode(value)
+        return smart_text(value)
 
 
 class URLField(CharField):
     type_name = 'URLField'
+    type_label = 'url'
 
     def __init__(self, **kwargs):
-        kwargs['max_length'] = kwargs.get('max_length', 200)
         kwargs['validators'] = [validators.URLValidator()]
         super(URLField, self).__init__(**kwargs)
 
 
 class SlugField(CharField):
     type_name = 'SlugField'
+    type_label = 'slug'
+    form_field_class = forms.SlugField
+
+    default_error_messages = {
+        'invalid': _("Enter a valid 'slug' consisting of letters, numbers,"
+                     " underscores or hyphens."),
+    }
+    default_validators = [validators.validate_slug]
 
     def __init__(self, *args, **kwargs):
-        kwargs['max_length'] = kwargs.get('max_length', 50)
         super(SlugField, self).__init__(*args, **kwargs)
 
 
 class ChoiceField(WritableField):
     type_name = 'ChoiceField'
+    type_label = 'multiple choice'
     form_field_class = forms.ChoiceField
     widget = widgets.Select
     default_error_messages = {
-        'invalid_choice': _('Select a valid choice. %(value)s is not one of the available choices.'),
+        'invalid_choice': _('Select a valid choice. %(value)s is not one of '
+                            'the available choices.'),
     }
 
     def __init__(self, choices=(), *args, **kwargs):
         super(ChoiceField, self).__init__(*args, **kwargs)
         self.choices = choices
+        if not self.required:
+            self.choices = BLANK_CHOICE_DASH + self.choices
 
     def _get_choices(self):
         return self._choices
@@ -817,16 +491,17 @@ class ChoiceField(WritableField):
             if isinstance(v, (list, tuple)):
                 # This is an optgroup, so look inside the group for options
                 for k2, v2 in v:
-                    if value == smart_unicode(k2):
+                    if value == smart_text(k2):
                         return True
             else:
-                if value == smart_unicode(k):
+                if value == smart_text(k) or value == k:
                     return True
         return False
 
 
 class EmailField(CharField):
     type_name = 'EmailField'
+    type_label = 'email'
     form_field_class = forms.EmailField
 
     default_error_messages = {
@@ -840,16 +515,11 @@ class EmailField(CharField):
             return None
         return ret.strip()
 
-    def __deepcopy__(self, memo):
-        result = copy.copy(self)
-        memo[id(self)] = result
-        #result.widget = copy.deepcopy(self.widget, memo)
-        result.validators = self.validators[:]
-        return result
-
 
 class RegexField(CharField):
     type_name = 'RegexField'
+    type_label = 'regex'
+    form_field_class = forms.RegexField
 
     def __init__(self, regex, max_length=None, min_length=None, *args, **kwargs):
         super(RegexField, self).__init__(max_length, min_length, *args, **kwargs)
@@ -859,7 +529,7 @@ class RegexField(CharField):
         return self._regex
 
     def _set_regex(self, regex):
-        if isinstance(regex, basestring):
+        if isinstance(regex, six.string_types):
             regex = re.compile(regex)
         self._regex = regex
         if hasattr(self, '_regex_validator') and self._regex_validator in self.validators:
@@ -869,25 +539,24 @@ class RegexField(CharField):
 
     regex = property(_get_regex, _set_regex)
 
-    def __deepcopy__(self, memo):
-        result = copy.copy(self)
-        memo[id(self)] = result
-        result.validators = self.validators[:]
-        return result
-
 
 class DateField(WritableField):
     type_name = 'DateField'
+    type_label = 'date'
     widget = widgets.DateInput
     form_field_class = forms.DateField
 
     default_error_messages = {
-        'invalid': _(u"'%s' value has an invalid date format. It must be "
-                     u"in YYYY-MM-DD format."),
-        'invalid_date': _(u"'%s' value has the correct format (YYYY-MM-DD) "
-                          u"but it is an invalid date."),
+        'invalid': _("Date has wrong format. Use one of these formats instead: %s"),
     }
     empty = None
+    input_formats = api_settings.DATE_INPUT_FORMATS
+    format = api_settings.DATE_FORMAT
+
+    def __init__(self, input_formats=None, format=None, *args, **kwargs):
+        self.input_formats = input_formats if input_formats is not None else self.input_formats
+        self.format = format if format is not None else self.format
+        super(DateField, self).__init__(*args, **kwargs)
 
     def from_native(self, value):
         if value in validators.EMPTY_VALUES:
@@ -903,33 +572,55 @@ class DateField(WritableField):
         if isinstance(value, datetime.date):
             return value
 
-        try:
-            parsed = parse_date(value)
-            if parsed is not None:
-                return parsed
-        except ValueError:
-            msg = self.error_messages['invalid_date'] % value
-            raise ValidationError(msg)
+        for format in self.input_formats:
+            if format.lower() == ISO_8601:
+                try:
+                    parsed = parse_date(value)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    if parsed is not None:
+                        return parsed
+            else:
+                try:
+                    parsed = datetime.datetime.strptime(value, format)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    return parsed.date()
 
-        msg = self.error_messages['invalid'] % value
+        msg = self.error_messages['invalid'] % readable_date_formats(self.input_formats)
         raise ValidationError(msg)
+
+    def to_native(self, value):
+        if value is None or self.format is None:
+            return value
+
+        if isinstance(value, datetime.datetime):
+            value = value.date()
+
+        if self.format.lower() == ISO_8601:
+            return value.isoformat()
+        return value.strftime(self.format)
 
 
 class DateTimeField(WritableField):
     type_name = 'DateTimeField'
+    type_label = 'datetime'
     widget = widgets.DateTimeInput
     form_field_class = forms.DateTimeField
 
     default_error_messages = {
-        'invalid': _(u"'%s' value has an invalid format. It must be in "
-                     u"YYYY-MM-DD HH:MM[:ss[.uuuuuu]][TZ] format."),
-        'invalid_date': _(u"'%s' value has the correct format "
-                          u"(YYYY-MM-DD) but it is an invalid date."),
-        'invalid_datetime': _(u"'%s' value has the correct format "
-                              u"(YYYY-MM-DD HH:MM[:ss[.uuuuuu]][TZ]) "
-                              u"but it is an invalid date/time."),
+        'invalid': _("Datetime has wrong format. Use one of these formats instead: %s"),
     }
     empty = None
+    input_formats = api_settings.DATETIME_INPUT_FORMATS
+    format = api_settings.DATETIME_FORMAT
+
+    def __init__(self, input_formats=None, format=None, *args, **kwargs):
+        self.input_formats = input_formats if input_formats is not None else self.input_formats
+        self.format = format if format is not None else self.format
+        super(DateTimeField, self).__init__(*args, **kwargs)
 
     def from_native(self, value):
         if value in validators.EMPTY_VALUES:
@@ -944,35 +635,105 @@ class DateTimeField(WritableField):
                 # local time. This won't work during DST change, but we can't
                 # do much about it, so we let the exceptions percolate up the
                 # call stack.
-                warnings.warn(u"DateTimeField received a naive datetime (%s)"
-                              u" while time zone support is active." % value,
+                warnings.warn("DateTimeField received a naive datetime (%s)"
+                              " while time zone support is active." % value,
                               RuntimeWarning)
                 default_timezone = timezone.get_default_timezone()
                 value = timezone.make_aware(value, default_timezone)
             return value
 
-        try:
-            parsed = parse_datetime(value)
-            if parsed is not None:
-                return parsed
-        except ValueError:
-            msg = self.error_messages['invalid_datetime'] % value
-            raise ValidationError(msg)
+        for format in self.input_formats:
+            if format.lower() == ISO_8601:
+                try:
+                    parsed = parse_datetime(value)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    if parsed is not None:
+                        return parsed
+            else:
+                try:
+                    parsed = datetime.datetime.strptime(value, format)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    return parsed
 
-        try:
-            parsed = parse_date(value)
-            if parsed is not None:
-                return datetime.datetime(parsed.year, parsed.month, parsed.day)
-        except ValueError:
-            msg = self.error_messages['invalid_date'] % value
-            raise ValidationError(msg)
-
-        msg = self.error_messages['invalid'] % value
+        msg = self.error_messages['invalid'] % readable_datetime_formats(self.input_formats)
         raise ValidationError(msg)
+
+    def to_native(self, value):
+        if value is None or self.format is None:
+            return value
+
+        if self.format.lower() == ISO_8601:
+            ret = value.isoformat()
+            if ret.endswith('+00:00'):
+                ret = ret[:-6] + 'Z'
+            return ret
+        return value.strftime(self.format)
+
+
+class TimeField(WritableField):
+    type_name = 'TimeField'
+    type_label = 'time'
+    widget = widgets.TimeInput
+    form_field_class = forms.TimeField
+
+    default_error_messages = {
+        'invalid': _("Time has wrong format. Use one of these formats instead: %s"),
+    }
+    empty = None
+    input_formats = api_settings.TIME_INPUT_FORMATS
+    format = api_settings.TIME_FORMAT
+
+    def __init__(self, input_formats=None, format=None, *args, **kwargs):
+        self.input_formats = input_formats if input_formats is not None else self.input_formats
+        self.format = format if format is not None else self.format
+        super(TimeField, self).__init__(*args, **kwargs)
+
+    def from_native(self, value):
+        if value in validators.EMPTY_VALUES:
+            return None
+
+        if isinstance(value, datetime.time):
+            return value
+
+        for format in self.input_formats:
+            if format.lower() == ISO_8601:
+                try:
+                    parsed = parse_time(value)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    if parsed is not None:
+                        return parsed
+            else:
+                try:
+                    parsed = datetime.datetime.strptime(value, format)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    return parsed.time()
+
+        msg = self.error_messages['invalid'] % readable_time_formats(self.input_formats)
+        raise ValidationError(msg)
+
+    def to_native(self, value):
+        if value is None or self.format is None:
+            return value
+
+        if isinstance(value, datetime.datetime):
+            value = value.time()
+
+        if self.format.lower() == ISO_8601:
+            return value.isoformat()
+        return value.strftime(self.format)
 
 
 class IntegerField(WritableField):
     type_name = 'IntegerField'
+    type_label = 'integer'
     form_field_class = forms.IntegerField
 
     default_error_messages = {
@@ -1003,6 +764,7 @@ class IntegerField(WritableField):
 
 class FloatField(WritableField):
     type_name = 'FloatField'
+    type_label = 'float'
     form_field_class = forms.FloatField
 
     default_error_messages = {
@@ -1020,9 +782,80 @@ class FloatField(WritableField):
             raise ValidationError(msg)
 
 
+class DecimalField(WritableField):
+    type_name = 'DecimalField'
+    type_label = 'decimal'
+    form_field_class = forms.DecimalField
+
+    default_error_messages = {
+        'invalid': _('Enter a number.'),
+        'max_value': _('Ensure this value is less than or equal to %(limit_value)s.'),
+        'min_value': _('Ensure this value is greater than or equal to %(limit_value)s.'),
+        'max_digits': _('Ensure that there are no more than %s digits in total.'),
+        'max_decimal_places': _('Ensure that there are no more than %s decimal places.'),
+        'max_whole_digits': _('Ensure that there are no more than %s digits before the decimal point.')
+    }
+
+    def __init__(self, max_value=None, min_value=None, max_digits=None, decimal_places=None, *args, **kwargs):
+        self.max_value, self.min_value = max_value, min_value
+        self.max_digits, self.decimal_places = max_digits, decimal_places
+        super(DecimalField, self).__init__(*args, **kwargs)
+
+        if max_value is not None:
+            self.validators.append(validators.MaxValueValidator(max_value))
+        if min_value is not None:
+            self.validators.append(validators.MinValueValidator(min_value))
+
+    def from_native(self, value):
+        """
+        Validates that the input is a decimal number. Returns a Decimal
+        instance. Returns None for empty values. Ensures that there are no more
+        than max_digits in the number, and no more than decimal_places digits
+        after the decimal point.
+        """
+        if value in validators.EMPTY_VALUES:
+            return None
+        value = smart_text(value).strip()
+        try:
+            value = Decimal(value)
+        except DecimalException:
+            raise ValidationError(self.error_messages['invalid'])
+        return value
+
+    def validate(self, value):
+        super(DecimalField, self).validate(value)
+        if value in validators.EMPTY_VALUES:
+            return
+        # Check for NaN, Inf and -Inf values. We can't compare directly for NaN,
+        # since it is never equal to itself. However, NaN is the only value that
+        # isn't equal to itself, so we can use this to identify NaN
+        if value != value or value == Decimal("Inf") or value == Decimal("-Inf"):
+            raise ValidationError(self.error_messages['invalid'])
+        sign, digittuple, exponent = value.as_tuple()
+        decimals = abs(exponent)
+        # digittuple doesn't include any leading zeros.
+        digits = len(digittuple)
+        if decimals > digits:
+            # We have leading zeros up to or past the decimal point.  Count
+            # everything past the decimal point as a digit.  We do not count
+            # 0 before the decimal point as a digit since that would mean
+            # we would not allow max_digits = decimal_places.
+            digits = decimals
+        whole_digits = digits - decimals
+
+        if self.max_digits is not None and digits > self.max_digits:
+            raise ValidationError(self.error_messages['max_digits'] % self.max_digits)
+        if self.decimal_places is not None and decimals > self.decimal_places:
+            raise ValidationError(self.error_messages['max_decimal_places'] % self.decimal_places)
+        if self.max_digits is not None and self.decimal_places is not None and whole_digits > (self.max_digits - self.decimal_places):
+            raise ValidationError(self.error_messages['max_whole_digits'] % (self.max_digits - self.decimal_places))
+        return value
+
+
 class FileField(WritableField):
-    _use_files = True
+    use_files = True
     type_name = 'FileField'
+    type_label = 'file upload'
     form_field_class = forms.FileField
     widget = widgets.FileInput
 
@@ -1065,11 +898,14 @@ class FileField(WritableField):
 
 
 class ImageField(FileField):
-    _use_files = True
+    use_files = True
+    type_name = 'ImageField'
+    type_label = 'image upload'
     form_field_class = forms.ImageField
 
     default_error_messages = {
-        'invalid_image': _("Upload a valid image. The file you uploaded was either not an image or a corrupted image."),
+        'invalid_image': _("Upload a valid image. The file you uploaded was "
+                           "either not an image or a corrupted image."),
     }
 
     def from_native(self, data):
@@ -1081,11 +917,8 @@ class ImageField(FileField):
         if f is None:
             return None
 
-        # Try to import PIL in either of the two ways it can end up installed.
-        try:
-            from PIL import Image
-        except ImportError:
-            import Image
+        from compat import Image
+        assert Image is not None, 'PIL must be installed for ImageField support'
 
         # We need to get a file object for PIL. We might have a path or we might
         # have to read the data into memory.
