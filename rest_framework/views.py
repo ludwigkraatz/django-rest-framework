@@ -252,8 +252,9 @@ class APIView(View):
             if obj and hasattr(obj, 'get_absolute_url'):
                 headers['Location'] = obj.get_absolute_url()
             elif obj and serializer_fields:
+                from rest_framework.relations import HyperlinkedIdentityField
                 for field_name, field in serializer_fields.iteritems():
-                    if isinstance(field, fields.HyperlinkedIdentityField):
+                    if isinstance(field, HyperlinkedIdentityField):
                         headers['Location'] = field.field_to_native(obj, field_name)
         
         return headers
