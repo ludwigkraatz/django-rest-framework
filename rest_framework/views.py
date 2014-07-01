@@ -357,7 +357,6 @@ class APIView(View):
         """
         headers = self.get_response_headers(request)
         return Response(self.metadata(request), status=status.HTTP_200_OK, headers=headers)
-        return Response(self.metadata(request), status=status.HTTP_200_OK)
 
     def metadata(self, request):
         """

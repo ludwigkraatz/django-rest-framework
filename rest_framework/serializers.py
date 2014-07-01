@@ -223,6 +223,9 @@ class BaseSerializer(WritableField):
             if key not in ret:
                 ret[key] = val
 
+        for key, field in ret.items():
+            field.initialize(parent=self, field_name=key)
+
         return ret
 
     def get_fields(self):
@@ -245,9 +248,6 @@ class BaseSerializer(WritableField):
             assert isinstance(self.opts.exclude, (list, tuple)), '`exclude` must be a list or tuple'
             for key in self.opts.exclude:
                 ret.pop(key, None)
-
-        for key, field in ret.items():
-            field.initialize(parent=self, field_name=key)
 
         return ret
 
